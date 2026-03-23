@@ -1191,6 +1191,52 @@ body[data-theme="dark"] .splash-theme-toggle {
   color: #7c2d12;
 }
 
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(13, 40, 24, 0.38);
+  backdrop-filter: blur(4px);
+  animation: modalFadeIn 0.22s ease;
+}
+
+.modal-box {
+  width: min(520px, 100%);
+  border-radius: 24px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  padding: 24px;
+  display: grid;
+  gap: 14px;
+  animation: fadeUp 0.28s ease;
+}
+
+.modal-title {
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.modal-sub,
+.modal-note {
+  font-size: 0.9rem;
+  color: var(--text-sub);
+  line-height: 1.6;
+}
+
+.modal-signin {
+  justify-content: center;
+  gap: 8px;
+}
+
+.modal-signin i {
+  font-size: 0.95rem;
+}
+
 /* Motion */
 @keyframes fadeUp {
   from {
@@ -1215,6 +1261,15 @@ body[data-theme="dark"] .splash-theme-toggle {
 }
 
 @keyframes pageIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modalFadeIn {
   from {
     opacity: 0;
   }
@@ -1669,6 +1724,30 @@ body.cleo-mode .step {
 body.cleo-mode .interswitch-panel {
   border-color: rgba(71, 32, 28, 0.22);
   background: rgba(71, 32, 28, 0.05);
+}
+
+body.cleo-mode .modal {
+  background: rgba(24, 12, 9, 0.42);
+}
+
+body.cleo-mode .modal-box {
+  border-radius: 24px;
+  background: rgba(251, 245, 236, 0.96);
+  border: 1px solid rgba(70, 31, 22, 0.18);
+  box-shadow: 0 22px 50px rgba(71, 32, 28, 0.24);
+}
+
+body.cleo-mode .modal-title {
+  font-family: "Newsreader", serif;
+  font-size: 1.48rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #2f1711;
+}
+
+body.cleo-mode .modal-sub,
+body.cleo-mode .modal-note {
+  color: #6b4f41;
 }
 
 body.cleo-mode .score-ring-wrapper {

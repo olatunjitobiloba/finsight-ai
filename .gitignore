@@ -1,0 +1,66 @@
+.env.local
+# ─────────────────────────────────────────
+# FINSIGHT AI — .gitignore
+# ─────────────────────────────────────────
+
+# Python cache — NEVER commit these
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyc
+*$py.class
+
+# Virtual environment — NEVER commit
+venv/
+env/
+.env/
+.venv/
+ENV/
+
+# Environment variables — NEVER commit secrets
+.env
+.env.local
+.env.production
+.env.staging
+*.env
+
+# Test files — temporary, not for repo
+test_*.py
+*_test.py
+
+# Database / Supabase local
+*.db
+*.sqlite3
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# VS Code settings
+.vscode/
+*.code-workspace
+
+# Jupyter Notebooks checkpoints
+.ipynb_checkpoints/
+
+# Distribution / build
+dist/
+build/
+*.egg-info/
+*.egg
+
+# Coverage reports
+.coverage
+htmlcov/
+
+# MyPy
+.mypy_cache/
+
+# Frontend/hosting artifacts
+.vercel
+node_modules/

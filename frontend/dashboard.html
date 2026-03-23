@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="theme-color" content="#f8f4ee"/>
+  <title>FinSight AI - Financial Decision Engine</title>
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="stylesheet" href="./assets/style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,700&display=swap" rel="stylesheet" />
+  <link
+    rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
+    crossorigin="anonymous"
+    referrerpolicy="no-referrer"
+  />
+</head>
+
+<body class="cleo-mode">
+
+  <div class="top-banner">Built for modern money decisions</div>
+
+  <header class="header cleo-header">
+    <div class="header-inner">
+      <div class="logo">
+        <span class="logo-icon"><i class="fa-solid fa-wave-square" aria-hidden="true"></i></span>
+        <span class="logo-text">FinSight <span class="logo-ai">AI</span></span>
+      </div>
+      <div class="header-right">
+        <div class="header-tagline">Money, but cinematic.</div>
+        <div class="brand-mark" aria-hidden="true">
+          <span class="brand-mark-dot"></span>
+          <span class="brand-mark-text">FS</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="main">
+    <section class="hero-immersive">
+      <div class="hero-content">
+        <p class="hero-kicker">Your financial companion</p>
+        <h1>Money clarity that feels human.</h1>
+        <p class="hero-subtext">
+          See your score, risk patterns, and next best actions in one calm, intelligent flow.
+        </p>
+        <a class="hero-cta" href="#inputPanel">Start analysis</a>
+      </div>
+      <div class="hero-cards" aria-hidden="true">
+        <div class="hero-card hero-card-a"></div>
+        <div class="hero-card hero-card-b"></div>
+        <div class="hero-card hero-card-c"></div>
+      </div>
+    </section>
+
+    <section class="globe-story" aria-label="Story insights">
+      <div class="globe-stage">
+        <div class="globe-shell" aria-hidden="true">
+          <span class="globe-core"></span>
+          <span class="globe-ring"></span>
+          <span class="globe-ring globe-ring-alt"></span>
+          <p class="globe-read">Scroll to reveal</p>
+        </div>
+      </div>
+      <div class="globe-copy">
+        <article class="globe-copy-block">
+          <p class="section-eyebrow">Signal 01</p>
+          <h3>Income arrives. Spending accelerates.</h3>
+          <p>
+            We map your post-income impulse window so you can pre-commit savings
+            before lifestyle spending takes over.
+          </p>
+        </article>
+        <article class="globe-copy-block">
+          <p class="section-eyebrow">Signal 02</p>
+          <h3>Burn-rate pressure is predictable.</h3>
+          <p>
+            Your runway is computed from actual behavior, not assumptions.
+            This means alerts arrive before your balance falls apart.
+          </p>
+        </article>
+        <article class="globe-copy-block">
+          <p class="section-eyebrow">Signal 03</p>
+          <h3>Small fixes compound into breathing room.</h3>
+          <p>
+            Action prompts are prioritized by impact and timing so your next
+            decision is always the highest-leverage move.
+          </p>
+        </article>
+      </div>
+    </section>
+
+    <section class="editorial-flow" aria-label="Financial storyline modules">
+      <article class="flow-row flow-row-a">
+        <div class="flow-media flow-media-a" aria-hidden="true"></div>
+        <div class="flow-copy">
+          <p class="section-eyebrow">Chapter A</p>
+          <h3>See the whole month at once.</h3>
+          <p>
+            FinSight stitches alerts, statement rows, and category behavior into
+            one sequence so context is never lost between transactions.
+          </p>
+        </div>
+      </article>
+
+      <article class="flow-row flow-row-b">
+        <div class="flow-media flow-media-b" aria-hidden="true"></div>
+        <div class="flow-copy">
+          <p class="section-eyebrow">Chapter B</p>
+          <h3>Alternate perspective, same truth.</h3>
+          <p>
+            Your score, runway, and flagged patterns are shown side-by-side to
+            make trade-offs obvious and action immediate.
+          </p>
+        </div>
+      </article>
+
+      <article class="flow-row flow-row-c">
+        <div class="flow-media flow-media-c" aria-hidden="true"></div>
+        <div class="flow-copy">
+          <p class="section-eyebrow">Chapter C</p>
+          <h3>Move from diagnosis to execution.</h3>
+          <p>
+            Once risk appears, execute recommended actions and simulate outcomes
+            instantly to keep momentum and reduce financial drift.
+          </p>
+        </div>
+      </article>
+    </section>
+
+    <section class="panel input-panel" id="inputPanel">
+      <div class="panel-header">
+        <h2>Analyze Your Finances</h2>
+        <p class="panel-sub">
+          Paste SMS alerts or upload a bank statement CSV.
+          FinSight reconstructs your financial story instantly.
+        </p>
+      </div>
+
+      <div class="tabs" role="tablist" aria-label="Input mode">
+        <button class="tab active" id="tabSMS" onclick="switchTab('sms')" role="tab" aria-selected="true" type="button">
+          <i class="fa-solid fa-mobile-screen-button" aria-hidden="true"></i>
+          SMS Alerts
+        </button>
+        <button class="tab" id="tabCSV" onclick="switchTab('csv')" role="tab" aria-selected="false" type="button">
+          <i class="fa-solid fa-file-csv" aria-hidden="true"></i>
+          CSV Statement
+        </button>
+      </div>
+
+      <div class="tab-content" id="contentSMS" role="tabpanel" aria-labelledby="tabSMS">
+        <textarea
+          id="smsInput"
+          class="sms-textarea"
+          placeholder="Example:&#10;Acct 0123456789 debited with NGN5,000.00 on 18-Mar-26. Desc: UBER TRIP. Bal: NGN45,000.00&#10;&#10;Access Bank: Your account has been credited with N150,000.00. Narration: Salary March 2026."
+          rows="7"
+        ></textarea>
+
+        <div class="input-actions">
+          <button class="btn btn-primary" id="analyzeBtn" onclick="analyzeNow()" type="button">
+            <span class="btn-icon"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i></span>
+            Analyze My Finances
+          </button>
+          <button class="btn btn-ghost" onclick="loadDemoData()" type="button">
+            Load Demo Data
+          </button>
+        </div>
+      </div>
+
+      <div class="tab-content hidden" id="contentCSV" role="tabpanel" aria-labelledby="tabCSV">
+        <div
+          class="csv-upload-area"
+          id="csvDropZone"
+          ondragover="event.preventDefault()"
+          ondrop="handleCSVDrop(event)"
+        >
+          <div class="csv-icon"><i class="fa-solid fa-file-arrow-up" aria-hidden="true"></i></div>
+          <div class="csv-upload-text">Drag and drop your bank statement CSV</div>
+          <div class="csv-upload-sub">Supports GTBank, Access Bank, Zenith, UBA, and First Bank formats</div>
+          <label class="btn btn-ghost csv-file-label">
+            Browse File
+            <input
+              type="file"
+              id="csvFileInput"
+              accept=".csv"
+              class="csv-file-input"
+              onchange="handleCSVFile(event)"
+            />
+          </label>
+        </div>
+
+        <div class="csv-preview hidden" id="csvPreview">
+          <div class="csv-preview-header">
+            <span id="csvFileName">statement.csv</span>
+            <span id="csvRowCount">0 rows</span>
+          </div>
+        </div>
+
+        <div class="input-actions">
+          <button class="btn btn-primary" onclick="analyzeCSV()" type="button">
+            <span class="btn-icon"><i class="fa-solid fa-magnifying-glass-chart" aria-hidden="true"></i></span>
+            Analyze Statement
+          </button>
+          <button class="btn btn-ghost" onclick="loadDemoCSV()" type="button">
+            Load Demo CSV
+          </button>
+        </div>
+      </div>
+
+      <div class="input-hint">
+        <i class="fa-solid fa-lock" aria-hidden="true"></i>
+        Your data is analyzed securely and never shared.
+      </div>
+    </section>
+
+    <section class="story-strip" aria-hidden="true">
+      <div class="story-block story-1"></div>
+      <div class="story-block story-2"></div>
+      <div class="story-block story-3"></div>
+    </section>
+
+    <section class="panel loading-panel hidden" id="loadingPanel">
+      <div class="loading-inner">
+        <div class="loading-spinner"></div>
+        <p class="loading-text" id="loadingText">Parsing SMS alerts...</p>
+        <div class="loading-steps">
+          <span class="step active" id="step1"><i class="fa-solid fa-mobile-screen-button" aria-hidden="true"></i> Reading SMS</span>
+          <span class="step" id="step2"><i class="fa-solid fa-brain" aria-hidden="true"></i> Calculating Score</span>
+          <span class="step" id="step3"><i class="fa-solid fa-chart-line" aria-hidden="true"></i> Predicting Future</span>
+          <span class="step" id="step4"><i class="fa-solid fa-bolt" aria-hidden="true"></i> Generating Actions</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="results hidden" id="resultsPanel">
+      <div class="top-row">
+        <div class="card score-card" id="scoreCard">
+          <div class="card-label">Financial Health Score</div>
+          <div class="score-ring-wrapper">
+            <svg class="score-ring" viewBox="0 0 120 120">
+              <circle class="ring-bg" cx="60" cy="60" r="50"/>
+              <circle class="ring-fill" id="ringFill" cx="60" cy="60" r="50"
+                stroke-dasharray="314"
+                stroke-dashoffset="314"
+              />
+            </svg>
+            <div class="score-center">
+              <div class="score-number" id="scoreNumber">0</div>
+              <div class="score-max">/100</div>
+            </div>
+          </div>
+          <div class="score-label" id="scoreLabel">-</div>
+          <div class="score-message" id="scoreMessage">-</div>
+        </div>
+
+        <div class="card days-card" id="daysCard">
+          <div class="card-label">Days Until Broke</div>
+          <div class="days-number" id="daysNumber">-</div>
+          <div class="days-unit">days remaining</div>
+          <div class="days-message" id="daysMessage">-</div>
+          <div class="days-burn">
+            Daily burn rate:
+            <strong id="dailyBurn">-</strong>
+          </div>
+        </div>
+      </div>
+
+      <div class="card patterns-card">
+        <div class="card-header">
+          <span class="card-title"><i class="fa-solid fa-brain" aria-hidden="true"></i> Behavior Patterns Detected</span>
+          <span class="pattern-count" id="patternCount">0 patterns</span>
+        </div>
+        <div class="patterns-list" id="patternsList"></div>
+      </div>
+
+      <div class="card pillars-card">
+        <div class="card-title"><i class="fa-solid fa-chart-pie" aria-hidden="true"></i> Score Breakdown</div>
+        <div class="pillars-list" id="pillarsList"></div>
+      </div>
+
+      <div class="card timeline-card">
+        <div class="card-header">
+          <span class="card-title"><i class="fa-solid fa-timeline" aria-hidden="true"></i> Transaction Timeline</span>
+          <span class="timeline-count" id="timelineCount">0 transactions</span>
+        </div>
+        <div class="timeline-list" id="timelineList"></div>
+      </div>
+
+      <div class="fix-section" id="fixSection">
+        <button class="btn btn-danger btn-large" onclick="fixThis()">
+          <i class="fa-solid fa-bolt" aria-hidden="true"></i> Fix This - Show Me What To Do
+        </button>
+      </div>
+
+      <div class="card actions-card hidden" id="actionsCard">
+        <div class="card-header">
+          <span class="card-title"><i class="fa-solid fa-bolt" aria-hidden="true"></i> AI Recommended Actions</span>
+          <span class="actions-sub">Based on your patterns</span>
+        </div>
+        <div class="actions-list" id="actionsList"></div>
+
+        <div class="interswitch-panel" id="interswitchPanel">
+          <div class="interswitch-header">
+            <span class="interswitch-badge">Powered by Interswitch</span>
+            <span class="interswitch-sub">Execute actions through payments</span>
+          </div>
+          <div class="interswitch-actions">
+            <button class="btn btn-interswitch" onclick="simulateSave()">
+              <i class="fa-solid fa-money-bill-trend-up" aria-hidden="true"></i> Simulate Saving ₦5,000
+            </button>
+            <button class="btn btn-interswitch" onclick="simulateBill()">
+              <i class="fa-solid fa-clipboard-list" aria-hidden="true"></i> Simulate Bill Optimization
+            </button>
+          </div>
+          <div class="interswitch-result hidden" id="interswitchResult"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="toast hidden" id="toast"></div>
+
+  <script src="./assets/app.js"></script>
+</body>
+</html>

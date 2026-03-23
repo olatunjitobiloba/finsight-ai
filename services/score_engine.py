@@ -1,0 +1,701 @@
+# services/score_engine.py
+# FinSight AI — Core Intelligence Engine
+# Owner: Toby
+# Handles:
+#   1. Financial Health Score (0–100)
+#   2. Days to Zero Predictor
+#   3. Behavior Pattern Detection
+#   4. AI Action Recommendations
+
+from datetime import date, datetime, timedelta
+from collections import defaultdict
+from typing import Optional
+
+
+# ─────────────────────────────────────────────────────
+# SECTION 1 — FINANCIAL HEALTH SCORE
+# ─────────────────────────────────────────────────────
+#
+# Score is built from 5 pillars:
+#
+# Pillar                Weight    What it measures
+# ──────────────────    ──────    ─────────────────────
+# Income Stability        25%     Is income consistent?
+# Spending Control        25%     Is spending < income?
+# Savings Behavior        20%     Is user saving?
+# Debt/Bill Regularity    15%     Are bills paid on time?
+# Diversity               15%     Spread across categories
+#
+# Final score → label + color + message
+
+def calculate_score(transactions: list) -> dict:
+    """
+    Input:  list of transaction dicts
+            Each dict must have:
+              - amount (float)
+              - type ('credit' or 'debit')
+              - category (str)
+              - transaction_date (str: 'YYYY-MM-DD')
+
+    Output: dict with score, label, color, message,
+            pillar breakdown, and top insight
+    """
+
+    if not transactions:
+        return _empty_score()
+
+    # ── Separate credits and debits
+    credits = [t for t in transactions if t.get("type") == "credit"]
+    debits  = [t for t in transactions if t.get("type") == "debit"]
+
+    total_income   = sum(t["amount"] for t in credits)
+    total_spending = sum(t["amount"] for t in debits)
+
+    # ── PILLAR 1: Income Stability (25 pts)
+    # More than 1 income source = stable
+    income_score = _score_income_stability(credits)
+
+    # ── PILLAR 2: Spending Control (25 pts)
+    # spending < income = good
+    spending_score = _score_spending_control(
+        total_income, total_spending
+    )
+
+    # ── PILLAR 3: Savings Behavior (20 pts)
+    savings_score = _score_savings(transactions)
+
+    # ── PILLAR 4: Bill Regularity (15 pts)
+    bill_score = _score_bills(debits)
+
+    # ── PILLAR 5: Category Diversity (15 pts)
+    diversity_score = _score_diversity(debits)
+
+    # ── TOTAL
+    total = (
+        income_score
+        + spending_score
+        + savings_score
+        + bill_score
+        + diversity_score
+    )
+    total = max(0, min(100, round(total)))
+
+    label, color, message = _score_label(total)
+
+    total_flow = total_income + total_spending
+    legacy_spending = 100 - ((total_spending / total_flow) * 100) if total_flow else 0
+
+    return {
+        "score": total,
+        "label": label,
+        "color": color,
+        "message": message,
+        "pillars": {
+            "income_stability": round(income_score),
+            "spending_control": round(spending_score),
+            "savings_behavior": round(savings_score),
+            "bill_regularity":  round(bill_score),
+            "category_diversity": round(diversity_score),
+            "cashflow": total,
+            "stability": max(0, min(100, total - 5)),
+            "spending": max(0, min(100, round(legacy_spending))),
+        },
+        "summary": {
+            "total_income":   round(total_income, 2),
+            "total_spending": round(total_spending, 2),
+            "net":            round(total_income - total_spending, 2),
+            "transaction_count": len(transactions),
+            "credits": round(total_income, 2),
+            "debits": round(total_spending, 2),
+        }
+    }
+
+
+def _score_income_stability(credits: list) -> float:
+    """25 pts max. Rewards consistent, multiple income entries."""
+    if not credits:
+        return 0.0
+    if len(credits) >= 3:
+        return 25.0
+    if len(credits) == 2:
+        return 18.0
+    return 10.0  # single income
+
+
+def _score_spending_control(income: float, spending: float) -> float:
+    """25 pts max. Rewards spending well below income."""
+    if income == 0:
+        return 0.0
+    ratio = spending / income  # 0.5 = spent 50% of income
+    if ratio <= 0.35:
+        return 25.0
+    if ratio <= 0.5:
+        return 15.0
+    if ratio <= 0.7:
+        return 10.0
+    if ratio <= 0.9:
+        return 5.0
+    if ratio <= 1.0:
+        return 2.0
+    return 0.0  # spending > income
+
+
+def _score_savings(transactions: list) -> float:
+    """20 pts max. Rewards any savings activity."""
+    savings_keywords = [
+        "savings", "piggyvest", "cowrywise",
+        "investment", "stash", "target", "save"
+    ]
+    for t in transactions:
+        desc = (t.get("description") or "").lower()
+        cat  = (t.get("category") or "").lower()
+        for kw in savings_keywords:
+            if kw in desc or kw in cat:
+                return 20.0
+    return 0.0
+
+
+def _score_bills(debits: list) -> float:
+    """15 pts max. Rewards paying bills (shows responsibility)."""
+    bill_keywords = [
+        "dstv", "gotv", "electricity", "water",
+        "rent", "airtime", "data", "subscription",
+        "bills", "ikedc", "ekedc"
+    ]
+    bill_count = 0
+    for t in debits:
+        desc = (t.get("description") or "").lower()
+        cat  = (t.get("category") or "").lower()
+        for kw in bill_keywords:
+            if kw in desc or kw in cat:
+                bill_count += 1
+                break
+    if bill_count >= 3:
+        return 15.0
+    if bill_count == 2:
+        return 10.0
+    if bill_count == 1:
+        return 5.0
+    return 0.0
+
+
+def _score_diversity(debits: list) -> float:
+    """15 pts max. Rewards spending across multiple categories."""
+    categories = set(
+        t.get("category", "Uncategorized") for t in debits
+    )
+    count = len(categories)
+    if count >= 5:
+        return 15.0
+    if count >= 3:
+        return 10.0
+    if count >= 2:
+        return 5.0
+    return 0.0
+
+
+def _score_label(score: int) -> tuple:
+    """Returns (label, color, message) based on score."""
+    if score >= 80:
+        return (
+            "Financially Healthy",
+            "green",
+            "You are managing your money well. Keep it up."
+        )
+    if score >= 55:
+        return (
+            "Moderate Risk",
+            "yellow",
+            "You are doing okay but some habits need attention."
+        )
+    if score >= 40:
+        return (
+            "Financially Unstable",
+            "orange",
+            "Your spending patterns are concerning. Act now."
+        )
+    return (
+        "Critical",
+        "red",
+        "Your finances are in a dangerous state. Immediate action needed."
+    )
+
+
+def _empty_score() -> dict:
+    return {
+        "score": 0,
+        "label": "No Data",
+        "color": "gray",
+        "message": "Paste your bank SMS alerts to get your score.",
+        "pillars": {},
+        "summary": {}
+    }
+
+
+# ─────────────────────────────────────────────────────
+# SECTION 2 — DAYS TO ZERO PREDICTOR
+# ─────────────────────────────────────────────────────
+#
+# Formula:
+#   daily_burn_rate = total_spending / days_active
+#   days_to_zero    = current_balance / daily_burn_rate
+#
+# This is the WOW #2 moment in the demo.
+
+def days_to_zero(
+    transactions: list,
+    current_balance: Optional[float] = None
+) -> dict:
+    """
+    Input:
+      transactions    — list of transaction dicts
+      current_balance — float (from latest SMS balance field)
+                        If None, estimated from net flow
+
+    Output: dict with days_remaining, daily_burn,
+            prediction_date, urgency, message
+    """
+
+    if not transactions:
+        return _empty_days()
+
+    debits = [t for t in transactions if t.get("type") == "debit"]
+    credits = [t for t in transactions if t.get("type") == "credit"]
+
+    if not debits:
+        return _empty_days()
+
+    total_spending = sum(t["amount"] for t in debits)
+    total_income   = sum(t["amount"] for t in credits)
+
+    # ── Daily burn rate based on active spending days
+    daily_spend = defaultdict(float)
+    for t in debits:
+        try:
+            tx_date = str(t["transaction_date"])
+            daily_spend[tx_date] += t["amount"]
+        except KeyError:
+            continue
+
+    active_spend_days = len(daily_spend) if daily_spend else 0
+    if active_spend_days == 0:
+        return _empty_days()
+
+    base_burn = total_spending / active_spend_days
+
+    # Add a small volatility buffer when spending is highly concentrated.
+    max_day_spend = max(daily_spend.values())
+    concentration = (max_day_spend / base_burn) - 1 if base_burn else 0
+    volatility_buffer = min(0.12, max(0.0, concentration * 0.031))
+    daily_burn = base_burn * (1 + volatility_buffer)
+
+    # ── Estimate balance if not provided
+    if current_balance is None or current_balance <= 0:
+        net = total_income - total_spending
+        # Assume user started with some base amount
+        current_balance = max(net, daily_burn * 3)
+
+    if daily_burn <= 0:
+        return _empty_days()
+
+    # ── Days remaining
+    days_remaining = int(current_balance / daily_burn)
+    days_remaining = max(0, days_remaining)
+
+    # ── Prediction date
+    prediction_date = (
+        date.today() + timedelta(days=days_remaining)
+    ).strftime("%B %d, %Y")
+
+    # ── Urgency level
+    if days_remaining <= 3:
+        urgency = "critical"
+        icon_label = "ALERT"
+    elif days_remaining <= 7:
+        urgency = "high"
+        icon_label = "WARNING"
+    elif days_remaining <= 14:
+        urgency = "medium"
+        icon_label = "TREND_DOWN"
+    else:
+        urgency = "low"
+        icon_label = "CHECK"
+
+    message = (
+        f"[{icon_label}] At your current burn rate, "
+        f"you will run out of money in {days_remaining} days "
+        f"({prediction_date})."
+    )
+
+    return {
+        "days_remaining":  days_remaining,
+        "daily_burn_rate": round(daily_burn, 2),
+        "current_balance": round(current_balance, 2),
+        "prediction_date": prediction_date,
+        "urgency":         urgency,
+        "message":         message
+    }
+
+
+def _empty_days() -> dict:
+    return {
+        "days_remaining":  None,
+        "daily_burn_rate": None,
+        "current_balance": None,
+        "prediction_date": None,
+        "urgency":         "unknown",
+        "message":         "Not enough data to predict."
+    }
+
+
+# ─────────────────────────────────────────────────────
+# SECTION 3 — BEHAVIOR PATTERN DETECTION
+# ─────────────────────────────────────────────────────
+#
+# Detects 5 patterns:
+#   1. Weekend overspending
+#   2. Post-salary spike
+#   3. Food addiction
+#   4. Recurring merchant (loyalty or habit)
+#   5. Late-month desperation spending
+
+def detect_patterns(transactions: list) -> dict:
+    """
+    Input:  list of transaction dicts
+    Output: dict with patterns list and top_pattern
+            Each pattern has: id, title, detail, severity
+    """
+
+    if not transactions:
+        return {"patterns": [], "top_pattern": None}
+
+    debits = [t for t in transactions if t.get("type") == "debit"]
+
+    if not debits:
+        return {"patterns": [], "top_pattern": None}
+
+    patterns = []
+
+    # ── Pattern 1: Weekend Overspending
+    p1 = _detect_weekend_spending(debits)
+    if p1:
+        patterns.append(p1)
+
+    # ── Pattern 2: Post-Salary Spike
+    p2 = _detect_post_salary_spike(transactions)
+    if p2:
+        patterns.append(p2)
+
+    # ── Pattern 3: Food Overspending
+    p3 = _detect_food_addiction(debits)
+    if p3:
+        patterns.append(p3)
+
+    # ── Pattern 4: Recurring Merchant
+    p4 = _detect_recurring_merchant(debits)
+    if p4:
+        patterns.append(p4)
+
+    # ── Pattern 5: Late-Month Desperation
+    p5 = _detect_late_month_spending(debits)
+    if p5:
+        patterns.append(p5)
+
+    # Sort by severity, then prioritize post-income spikes for action planning.
+    severity_order = {"high": 0, "medium": 1, "low": 2}
+    pattern_priority = {
+        "post_salary_spike": 0,
+        "weekend_overspend": 1,
+        "food_overspend": 2,
+        "late_month_desperation": 3,
+        "recurring_merchant": 4,
+    }
+    patterns.sort(
+        key=lambda x: (
+            severity_order.get(x["severity"], 3),
+            pattern_priority.get(x["id"], 99)
+        )
+    )
+
+    return {
+        "patterns":    patterns,
+        "top_pattern": patterns[0] if patterns else None,
+        "count":       len(patterns)
+    }
+
+
+def _detect_weekend_spending(debits: list) -> Optional[dict]:
+    """Detects if user spends significantly more on weekends."""
+    weekend_total = 0.0
+    weekday_total = 0.0
+    weekend_days = set()
+    weekday_days = set()
+
+    for t in debits:
+        try:
+            d = datetime.strptime(str(t["transaction_date"]), "%Y-%m-%d")
+            if d.weekday() >= 5:  # Saturday=5, Sunday=6
+                weekend_total += t["amount"]
+                weekend_days.add(d.date())
+            else:
+                weekday_total += t["amount"]
+                weekday_days.add(d.date())
+        except (ValueError, KeyError):
+            continue
+
+    if not weekend_days or not weekday_days:
+        return None
+
+    weekend_avg = weekend_total / len(weekend_days)
+    weekday_avg = weekday_total / len(weekday_days)
+
+    if weekend_avg > weekday_avg * 1.25:  # 25% more per active day
+        pct = round(((weekend_avg - weekday_avg) / weekday_avg) * 100)
+        return {
+            "id":       "weekend_overspend",
+            "title":    "Weekend Overspending",
+            "detail":   f"You spend {pct}% more on weekends than weekdays. "
+                        f"Weekend avg: ₦{weekend_avg:,.0f} vs "
+                        f"weekday avg: ₦{weekday_avg:,.0f}.",
+            "severity": "high" if pct >= 60 else "medium"
+        }
+    return None
+
+
+def _detect_post_salary_spike(transactions: list) -> Optional[dict]:
+    """Detects spending spike in 7 days after receiving income."""
+    credits = [t for t in transactions if t.get("type") == "credit"]
+    debits  = [t for t in transactions if t.get("type") == "debit"]
+
+    if not credits or not debits:
+        return None
+
+    spike_spending = 0.0
+    spike_count    = 0
+
+    for credit in credits:
+        try:
+            credit_date = datetime.strptime(
+                str(credit["transaction_date"]), "%Y-%m-%d"
+            ).date()
+            window_end = credit_date + timedelta(days=7)
+
+            for debit in debits:
+                debit_date = datetime.strptime(
+                    str(debit["transaction_date"]), "%Y-%m-%d"
+                ).date()
+                if credit_date <= debit_date <= window_end:
+                    spike_spending += debit["amount"]
+                    spike_count    += 1
+        except (ValueError, KeyError):
+            continue
+
+    total_spending = sum(t["amount"] for t in debits)
+
+    if total_spending == 0:
+        return None
+
+    spike_ratio = spike_spending / total_spending
+
+    if spike_ratio > 0.35 and spike_count >= 3:
+        pct = round(spike_ratio * 100)
+        return {
+            "id":       "post_salary_spike",
+            "title":    "Post-Income Spending Spike",
+            "detail":   f"You spend {pct}% of your money within 7 days "
+                        f"of receiving income. "
+                        f"This leaves you vulnerable for the rest of the month.",
+            "severity": "high"
+        }
+    return None
+
+
+def _detect_food_addiction(debits: list) -> Optional[dict]:
+    """Detects if food spending is disproportionately high."""
+    food_total = 0.0
+    total = 0.0
+
+    for t in debits:
+        total += t["amount"]
+        cat = (t.get("category") or "").lower()
+        desc = (t.get("description") or "").lower()
+        if "food" in cat or any(
+            kw in desc for kw in [
+                "food", "restaurant", "eatery", "kfc",
+                "chicken", "dominos", "shoprite", "bukka"
+            ]
+        ):
+            food_total += t["amount"]
+        elif "entertainment" in cat or any(
+            kw in desc for kw in ["club", "cinema", "outing"]
+        ):
+            # Count part of outings as discretionary food/lifestyle spend.
+            food_total += t["amount"] * 0.65
+
+    if total == 0:
+        return None
+
+    ratio = food_total / total
+
+    if ratio > 0.15:  # food is more than 15% of spending
+        pct = round(ratio * 100)
+        return {
+            "id":       "food_overspend",
+            "title":    "High Food Spending",
+            "detail":   f"Food accounts for {pct}% of your total spending. "
+                        f"Recommended maximum is 30%. "
+                        f"You could save ₦{(food_total * 0.2):,.0f} "
+                        f"by cutting food spend by 20%.",
+            "severity": "medium"
+        }
+    return None
+
+
+def _detect_recurring_merchant(debits: list) -> Optional[dict]:
+    """Detects if user repeatedly spends at same merchant."""
+    merchant_count = defaultdict(int)
+    merchant_total = defaultdict(float)
+
+    for t in debits:
+        desc = (t.get("description") or "unknown").lower().strip()
+        merchant_count[desc] += 1
+        merchant_total[desc] += t["amount"]
+
+    # Find merchant visited 3+ times
+    for merchant, count in merchant_count.items():
+        if count >= 3:
+            total = merchant_total[merchant]
+            return {
+                "id":       "recurring_merchant",
+                "title":    "Recurring Spending Pattern",
+                "detail":   f"You have spent at '{merchant}' {count} times, "
+                            f"totalling ₦{total:,.0f}. "
+                            f"Consider if this is intentional.",
+                "severity": "low"
+            }
+    return None
+
+
+def _detect_late_month_spending(debits: list) -> Optional[dict]:
+    """Detects if user spends heavily in last 7 days of month."""
+    early_total = 0.0
+    late_total  = 0.0
+
+    for t in debits:
+        try:
+            d = datetime.strptime(
+                str(t["transaction_date"]), "%Y-%m-%d"
+            )
+            if d.day >= 24:  # last 7 days of month
+                late_total  += t["amount"]
+            elif d.day <= 7:  # first 7 days
+                early_total += t["amount"]
+        except (ValueError, KeyError):
+            continue
+
+    if early_total == 0 or late_total == 0:
+        return None
+
+    if late_total > early_total * 2.0:
+        return {
+            "id":       "late_month_desperation",
+            "title":    "Late-Month Spending Spike",
+            "detail":   "You spend significantly more in the last week "
+                        "of the month than the first week. "
+                        "This suggests financial stress near month-end.",
+            "severity": "medium"
+        }
+    return None
+
+
+# ─────────────────────────────────────────────────────
+# SECTION 4 — AI ACTION RECOMMENDATIONS
+# ─────────────────────────────────────────────────────
+#
+# "Fix This" button logic
+# Returns 3 precise, actionable recommendations
+# based on score + patterns + days_to_zero
+
+def generate_actions(
+    score_result: dict,
+    days_result:  dict,
+    pattern_result: dict
+) -> list:
+    """
+    Input:  outputs from calculate_score(),
+            days_to_zero(), detect_patterns()
+
+    Output: list of up to 3 action dicts
+            Each action has: title, detail, impact, type
+    """
+
+    actions = []
+    score   = score_result.get("score", 50)
+    summary = score_result.get("summary", {})
+    days    = days_result.get("days_remaining")
+    patterns = pattern_result.get("patterns", [])
+    daily_burn = days_result.get("daily_burn_rate", 0)
+
+    # ── Action 1: Based on days_to_zero urgency
+    if days is not None and days <= 7:
+        cut = round(daily_burn * 0.3, 2)
+        actions.append({
+            "title":  "Reduce Daily Spending Immediately",
+            "detail": f"Cut daily spending by ₦{cut:,.0f} "
+                      f"to extend your runway by 3+ days.",
+            "impact": "high",
+            "type":   "spending_cut"
+        })
+
+    # ── Action 2: Based on top pattern
+    if patterns:
+        top = patterns[0]
+        if top["id"] == "weekend_overspend":
+            actions.append({
+                "title":  "Set Weekend Spending Limit",
+                "detail": "Cap weekend spending at your weekday average. "
+                          "This alone could save you ₦10,000–₦20,000/month.",
+                "impact": "high",
+                "type":   "spending_limit"
+            })
+        elif top["id"] == "post_salary_spike":
+            actions.append({
+                "title":  "Lock 30% of Income on Payday",
+                "detail": "Move 30% to savings the moment salary lands. "
+                          "Spend only what remains.",
+                "impact": "high",
+                "type":   "savings_action"
+            })
+        elif top["id"] == "food_overspend":
+            food_save = round(
+                summary.get("total_spending", 0) * 0.07, 2
+            )
+            actions.append({
+                "title":  "Reduce Food Spending by 20%",
+                "detail": f"Cook 3 meals per week instead of buying. "
+                          f"Estimated monthly saving: ₦{food_save:,.0f}.",
+                "impact": "medium",
+                "type":   "spending_cut"
+            })
+
+    # ── Action 3: Always recommend savings if score < 60
+    if score < 60 and len(actions) < 3:
+        actions.append({
+            "title":  "Start a ₦500/day Savings Habit",
+            "detail": "₦500/day = ₦15,000/month = ₦180,000/year. "
+                      "Small consistency beats large intentions.",
+            "impact": "medium",
+            "type":   "savings_action"
+        })
+
+    # ── Fallback if no actions generated
+    if not actions:
+        actions.append({
+            "title":  "Maintain Your Current Habits",
+            "detail": "Your finances look stable. "
+                      "Consider increasing savings rate to 20%.",
+            "impact": "low",
+            "type":   "maintenance"
+        })
+
+    return actions[:3]  # max 3 actions

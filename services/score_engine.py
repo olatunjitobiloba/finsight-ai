@@ -11,6 +11,8 @@ from datetime import date, datetime, timedelta
 from collections import defaultdict
 from typing import Optional
 
+from services.ai_actions import generate_genuine_actions
+
 
 # ─────────────────────────────────────────────────────
 # SECTION 1 — FINANCIAL HEALTH SCORE
@@ -619,83 +621,21 @@ def _detect_late_month_spending(debits: list) -> Optional[dict]:
 def generate_actions(
     score_result: dict,
     days_result:  dict,
-    pattern_result: dict
+    pattern_result: dict,
+    raw_transactions: Optional[list] = None,
+    user_context: Optional[dict] = None
 ) -> list:
     """
-    Input:  outputs from calculate_score(),
-            days_to_zero(), detect_patterns()
+    Input: outputs from calculate_score(), days_to_zero(), detect_patterns(),
+           plus optional raw transaction and user context.
 
-    Output: list of up to 3 action dicts
-            Each action has: title, detail, impact, type
+    Output: list of up to 5 personalized action dicts from the genuine,
+            fully data-driven action engine.
     """
-
-    actions = []
-    score   = score_result.get("score", 50)
-    summary = score_result.get("summary", {})
-    days    = days_result.get("days_remaining")
-    patterns = pattern_result.get("patterns", [])
-    daily_burn = days_result.get("daily_burn_rate", 0)
-
-    # ── Action 1: Based on days_to_zero urgency
-    if days is not None and days <= 7:
-        cut = round(daily_burn * 0.3, 2)
-        actions.append({
-            "title":  "Reduce Daily Spending Immediately",
-            "detail": f"Cut daily spending by ₦{cut:,.0f} "
-                      f"to extend your runway by 3+ days.",
-            "impact": "high",
-            "type":   "spending_cut"
-        })
-
-    # ── Action 2: Based on top pattern
-    if patterns:
-        top = patterns[0]
-        if top["id"] == "weekend_overspend":
-            actions.append({
-                "title":  "Set Weekend Spending Limit",
-                "detail": "Cap weekend spending at your weekday average. "
-                          "This alone could save you ₦10,000–₦20,000/month.",
-                "impact": "high",
-                "type":   "spending_limit"
-            })
-        elif top["id"] == "post_salary_spike":
-            actions.append({
-                "title":  "Lock 30% of Income on Payday",
-                "detail": "Move 30% to savings the moment salary lands. "
-                          "Spend only what remains.",
-                "impact": "high",
-                "type":   "savings_action"
-            })
-        elif top["id"] == "food_overspend":
-            food_save = round(
-                summary.get("total_spending", 0) * 0.07, 2
-            )
-            actions.append({
-                "title":  "Reduce Food Spending by 20%",
-                "detail": f"Cook 3 meals per week instead of buying. "
-                          f"Estimated monthly saving: ₦{food_save:,.0f}.",
-                "impact": "medium",
-                "type":   "spending_cut"
-            })
-
-    # ── Action 3: Always recommend savings if score < 60
-    if score < 60 and len(actions) < 3:
-        actions.append({
-            "title":  "Start a ₦500/day Savings Habit",
-            "detail": "₦500/day = ₦15,000/month = ₦180,000/year. "
-                      "Small consistency beats large intentions.",
-            "impact": "medium",
-            "type":   "savings_action"
-        })
-
-    # ── Fallback if no actions generated
-    if not actions:
-        actions.append({
-            "title":  "Maintain Your Current Habits",
-            "detail": "Your finances look stable. "
-                      "Consider increasing savings rate to 20%.",
-            "impact": "low",
-            "type":   "maintenance"
-        })
-
-    return actions[:3]  # max 3 actions
+    return generate_genuine_actions(
+        score_result=score_result,
+        days_result=days_result,
+        pattern_result=pattern_result,
+        raw_transactions=raw_transactions or [],
+        user_context=user_context,
+    )

@@ -320,6 +320,28 @@
     </section>
   </main>
 
+  <!-- Auth Modal -->
+  <div class="modal hidden" id="authModal" role="dialog" aria-modal="true" aria-labelledby="authModalTitle">
+    <div class="modal-box">
+      <div class="modal-title" id="authModalTitle">Sign in to execute this action</div>
+      <div class="modal-sub">
+        FinSight AI uses Interswitch to execute real financial actions.
+        Sign in to continue.
+      </div>
+      <button class="btn btn-primary modal-signin" onclick="signInWithGoogle()" type="button">
+        <i class="fa-solid fa-lock" aria-hidden="true"></i>
+        Sign in with Google
+      </button>
+      <div class="modal-note">
+        We never store your bank password.
+        Only your account number is used for payment routing.
+      </div>
+      <button class="btn btn-ghost" onclick="closeAuthModal(true)" type="button">
+        Cancel
+      </button>
+    </div>
+  </div>
+
   <div class="toast hidden" id="toast"></div>
 
   <script src="./assets/app.js"></script>

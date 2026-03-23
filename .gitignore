@@ -62,5 +62,9 @@ htmlcov/
 .mypy_cache/
 
 # Frontend/hosting artifacts
-.vercel
+.vercel/
 node_modules/
+
+# Generated documents/data exports
+*.pdf
+*.csv

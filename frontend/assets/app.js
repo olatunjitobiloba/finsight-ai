@@ -14,6 +14,7 @@ if ("serviceWorker" in navigator) {
 const API_BASE = window.location.hostname === "localhost"
   ? "http://localhost:8000"
   : "https://finsight-ai.vercel.app";
+const PDF_BASE = "https://margaret-06-finsight-pdf.hf.space";
 
 // State
 let currentResults = null;
@@ -418,7 +419,83 @@ function renderActions(actions) {
   `).join("");
 }
 
+// Auth gate before any Interswitch action.
+async function requireAuth(actionFn) {
+  const session = await getSupabaseSession();
+  if (!session) {
+    showAuthModal(actionFn);
+    return;
+  }
+  await actionFn();
+}
+
+function showAuthModal(pendingAction) {
+  const modal = getEl("authModal");
+  if (!modal) {
+    showToast("Sign-in modal not available.", "error");
+    return;
+  }
+
+  modal.classList.remove("hidden");
+  modal._pendingAction = pendingAction;
+}
+
+function closeAuthModal(clearPending = true) {
+  const modal = getEl("authModal");
+  if (!modal) return;
+
+  modal.classList.add("hidden");
+  if (clearPending) {
+    modal._pendingAction = null;
+  }
+}
+
+function setupAuthModalBehavior() {
+  const modal = getEl("authModal");
+  if (!modal) return;
+
+  modal.addEventListener("click", (event) => {
+    if (event.target === modal) {
+      closeAuthModal(true);
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !modal.classList.contains("hidden")) {
+      closeAuthModal(true);
+    }
+  });
+}
+
+async function signInWithGoogle() {
+  if (!window.supabase?.auth) {
+    showToast("Supabase is not configured.", "error");
+    return;
+  }
+
+  const { error } = await window.supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: { redirectTo: window.location.href }
+  });
+
+  if (error) showToast(`Sign-in failed: ${error.message}`, "error");
+}
+
+async function getSupabaseSession() {
+  if (!window.supabase?.auth) return null;
+  const { data } = await window.supabase.auth.getSession();
+  return data?.session || null;
+}
+
 async function simulateSave() {
+  await requireAuth(_doSave);
+}
+
+async function simulateBill() {
+  await requireAuth(_doBill);
+}
+
+async function _doSave() {
   const result = getEl("interswitchResult");
   if (!result) return;
 
@@ -454,7 +531,7 @@ async function simulateSave() {
   showToast("₦5,000 savings simulated via Interswitch.");
 }
 
-async function simulateBill() {
+async function _doBill() {
   const result = getEl("interswitchResult");
   if (!result) return;
 
@@ -825,6 +902,22 @@ window.addEventListener("DOMContentLoaded", () => {
   updateThemeColorMeta();
   switchTab("sms");
 
+  if (window.supabase?.auth) {
+    window.supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session) return;
+      const modal = getEl("authModal");
+      const pendingAction = modal?._pendingAction;
+      if (typeof pendingAction === "function") {
+        closeAuthModal(true);
+        pendingAction().catch(() => {
+          showToast("Unable to continue action after sign-in.", "error");
+        });
+      }
+    });
+  }
+
+  setupAuthModalBehavior();
+
   setupPageTransitions();
   setupBrandMarkTilt();
   setupParallaxCards();
@@ -843,3 +936,5 @@ window.analyzeCSV = analyzeCSV;
 window.fixThis = fixThis;
 window.simulateSave = simulateSave;
 window.simulateBill = simulateBill;
+window.signInWithGoogle = signInWithGoogle;
+window.closeAuthModal = closeAuthModal;

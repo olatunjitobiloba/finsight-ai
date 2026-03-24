@@ -189,7 +189,10 @@ async def parse_csv_text_endpoint(csv_text: str = Form(...)):
 
 
 @router.post("/parse/pdf")
-async def parse_pdf_endpoint(file: UploadFile = File(...)):
+async def parse_pdf_endpoint(
+    file: UploadFile = File(...),
+    password: str = Form(default="")
+):
     """
     Parse PDF statement and extract transaction data.
     
@@ -216,7 +219,8 @@ async def parse_pdf_endpoint(file: UploadFile = File(...)):
                 files = {'files': (file.filename, pdf_bytes, 'application/pdf')}
                 response = await client.post(
                     f"{pdf_service_url}/api/parse/pdf",
-                    files=files
+                    files=files,
+                    data={"password": password or ""}
                 )
                 
                 if response.status_code == 200:
@@ -230,9 +234,22 @@ async def parse_pdf_endpoint(file: UploadFile = File(...)):
                         "error": None
                     }
                 else:
+                    detail = "PDF service parsing failed"
+                    try:
+                        err = response.json()
+                        if isinstance(err, dict):
+                            raw_detail = err.get("detail")
+                            if isinstance(raw_detail, dict):
+                                detail = raw_detail.get("message") or raw_detail.get("reason") or detail
+                            elif isinstance(raw_detail, str):
+                                detail = raw_detail
+                    except Exception:
+                        # Keep default error detail when response is not JSON.
+                        pass
+
                     raise HTTPException(
                         status_code=response.status_code,
-                        detail="PDF service parsing failed"
+                        detail=detail
                     )
         except httpx.RequestError:
             # Fallback: return mock data or error message

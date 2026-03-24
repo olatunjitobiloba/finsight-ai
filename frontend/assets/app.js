@@ -13,8 +13,7 @@ if ("serviceWorker" in navigator) {
 
 const API_BASE = window.location.hostname === "localhost"
   ? "http://localhost:8000"
-  : "https://finsight-ai.vercel.app";
-const PDF_BASE = "https://margaret-06-finsight-pdf.hf.space";
+  : window.location.origin;
 const IS_LOCALHOST = window.location.hostname === "localhost";
 const ALLOW_MOCK_FALLBACK = IS_LOCALHOST;
 
@@ -22,6 +21,7 @@ const ALLOW_MOCK_FALLBACK = IS_LOCALHOST;
 let currentResults = null;
 let csvContent = null;
 let pdfFile = null;
+let pdfDemoMode = false;
 let activeTab = "sms";
 
 // Demo data
@@ -123,6 +123,7 @@ function handlePDFFile(event) {
   }
 
   pdfFile = file;
+  pdfDemoMode = false;
   const fileName = getEl("pdfFileName");
   const status = getEl("pdfStatus");
   if (fileName) fileName.textContent = file.name;
@@ -225,6 +226,11 @@ async function analyzeCSV() {
 }
 
 async function analyzePDF() {
+  if (pdfDemoMode) {
+    await runAnalysis({ sms_text: DEMO_SMS }, "/api/analyze");
+    return;
+  }
+
   if (!pdfFile) {
     showToast("Please upload or load a PDF file first.", "error");
     return;
@@ -238,6 +244,10 @@ async function analyzePDF() {
 
     const formData = new FormData();
     formData.append("file", pdfFile);
+    const pdfPassword = String(getEl("pdfPassword")?.value || "").trim();
+    if (pdfPassword) {
+      formData.append("password", pdfPassword);
+    }
 
     const response = await fetch(`${API_BASE}/api/parse/pdf`, {
       method: "POST",
@@ -245,7 +255,19 @@ async function analyzePDF() {
     });
 
     if (!response.ok) {
-      throw new Error(`PDF parse failed: ${response.status}`);
+      let detail = "";
+      try {
+        const errBody = await response.json();
+        if (typeof errBody?.detail === "string") {
+          detail = errBody.detail;
+        } else if (errBody?.detail?.message) {
+          detail = errBody.detail.message;
+        }
+      } catch {
+        // Ignore parse errors and use status text fallback.
+      }
+      const suffix = detail ? ` - ${detail}` : "";
+      throw new Error(`PDF parse failed: ${response.status}${suffix}`);
     }
 
     const parseResult = await response.json();
@@ -284,11 +306,14 @@ async function analyzePDF() {
 }
 
 function loadDemoPDF() {
-  pdfFile = { name: "demo-statement.pdf" };
+  pdfFile = null;
+  pdfDemoMode = true;
   const fileName = getEl("pdfFileName");
   const status = getEl("pdfStatus");
+  const passwordInput = getEl("pdfPassword");
   if (fileName) fileName.textContent = "demo-statement.pdf";
-  if (status) status.textContent = "Ready to analyze";
+  if (status) status.textContent = "Uses built-in sample transactions";
+  if (passwordInput) passwordInput.value = "";
   getEl("pdfPreview")?.classList.remove("hidden");
   getEl("pdfDropZone")?.classList.add("has-file");
   switchTab("pdf");
@@ -1151,41 +1176,9 @@ function setupParallaxCards() {
   onScroll();
 }
 
-function setupThemeToggle() {
-  const toggle = getEl("themeToggle");
-  if (!toggle) return;
-
-  const savedTheme = localStorage.getItem("finsight-theme") || "cleo";
-  const isDark = savedTheme === "dark";
-  
-  document.body.setAttribute("data-theme", isDark ? "dark" : "light");
-  document.body.classList.toggle("cleo-mode", !isDark);
-  updateThemeIcon();
-
-  toggle.addEventListener("click", () => {
-    const currentTheme = document.body.getAttribute("data-theme") || "light";
-    const newTheme = currentTheme === "dark" ? "light" : "dark";
-    document.body.setAttribute("data-theme", newTheme);
-    document.body.classList.toggle("cleo-mode", newTheme !== "dark");
-    localStorage.setItem("finsight-theme", newTheme);
-    updateThemeIcon();
-    showToast(`Switched to ${newTheme === "dark" ? "dark" : "light"} mode.`);
-  });
-}
-
-function updateThemeIcon() {
-  const toggle = getEl("themeToggle");
-  const icon = toggle?.querySelector("i");
-  if (!toggle || !icon) return;
-  const isDark = document.body.getAttribute("data-theme") === "dark";
-  icon.className = isDark ? "fa-solid fa-sun" : "fa-solid fa-moon";
-  toggle.title = isDark ? "Switch to light mode" : "Switch to dark mode";
-}
-
 window.addEventListener("DOMContentLoaded", () => {
   updateThemeColorMeta();
   switchTab("sms");
-  setupThemeToggle();
 
   if (window.supabase?.auth) {
     window.supabase.auth.onAuthStateChange((_event, session) => {

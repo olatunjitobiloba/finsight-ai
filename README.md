@@ -192,7 +192,7 @@ Outputs are generated dynamically from user data, not hardcoded responses.
 | Service     | URL                                                                                    |
 | ----------- | -------------------------------------------------------------------------------------- |
 | Application | [https://finsightng.vercel.app](https://finsightng.vercel.app)                         |
-| PDF Parser API Docs | [https://margaret-06-finsight-pdf.hf.space](https://margaret-06-finsight-pdf.hf.space/docs) |
+| PDF Parser API Docs | [https://margaret-06-finsight-pdf.hf.space/docs](https://margaret-06-finsight-pdf.hf.space/docs) |
 
 ---
 

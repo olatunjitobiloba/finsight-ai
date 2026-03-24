@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f8f4ee"/>
   <title>FinSight AI - Financial Decision Engine</title>
   <link rel="manifest" href="./manifest.json" />
-  <link rel="stylesheet" href="./assets/style.css?v=20260324" />
+  <link rel="stylesheet" href="./assets/style.css?v=20260324b" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,700&display=swap" rel="stylesheet" />
@@ -32,9 +32,6 @@
         <button class="history-button" id="historyBtn" onclick="showHistoryModal()" title="View analysis history" type="button">
           <i class="fa-solid fa-history" aria-hidden="true"></i>
           History
-        </button>
-        <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark mode" type="button" title="Toggle theme">
-          <i class="fa-solid fa-moon" aria-hidden="true"></i>
         </button>
         <div class="header-tagline">Money, but cinematic.</div>
         <div class="brand-mark" aria-hidden="true">
@@ -249,6 +246,17 @@
           </div>
         </div>
 
+        <div class="pdf-password-row">
+          <label for="pdfPassword" class="pdf-password-label">PDF Password (if statement is protected)</label>
+          <input
+            id="pdfPassword"
+            type="password"
+            class="pdf-password-input"
+            placeholder="Enter statement password"
+            autocomplete="off"
+          />
+        </div>
+
         <div class="input-actions">
           <button class="btn btn-primary" onclick="analyzePDF()" type="button">
             <span class="btn-icon"><i class="fa-solid fa-magnifying-glass-chart" aria-hidden="true"></i></span>
@@ -426,6 +434,6 @@
 
   <div class="toast hidden" id="toast"></div>
 
-  <script src="./assets/app.js?v=20260324"></script>
+  <script src="./assets/app.js?v=20260324b"></script>
 </body>
 </html>

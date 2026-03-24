@@ -54,17 +54,6 @@ body {
   position: relative;
 }
 
-body[data-theme="dark"] {
-  --bg: #0f1419;
-  --bg-2: #151a22;
-  --bg-card: rgba(20, 26, 38, 0.85);
-  --bg-input: rgba(15, 20, 25, 0.95);
-  --border: rgba(0, 208, 132, 0.2);
-  --text: #ecf1ff;
-  --text-sub: #a8c5b8;
-  --shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-}
-
 .symbol-font-preload {
   position: fixed;
   top: -9999px;
@@ -125,40 +114,6 @@ body::after {
   left: -140px;
   background: radial-gradient(circle, rgba(0, 208, 132, 0.02) 0%, rgba(0, 208, 132, 0) 72%);
   animation: none;
-}
-
-body[data-theme="dark"] .header {
-  background: rgba(15, 20, 25, 0.9);
-  border-bottom-color: rgba(0, 208, 132, 0.12);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.28);
-}
-
-body[data-theme="dark"] .header-tagline {
-  color: #9ad7ba;
-}
-
-body[data-theme="dark"] .brand-mark {
-  background: rgba(0, 208, 132, 0.08);
-  border-color: rgba(0, 208, 132, 0.24);
-}
-
-body[data-theme="dark"] .brand-mark-text {
-  color: #b2f3d5;
-}
-
-body[data-theme="dark"] .theme-toggle {
-  background: rgba(0, 208, 132, 0.08);
-  color: #b2f3d5;
-  border-color: rgba(0, 208, 132, 0.25);
-}
-
-body[data-theme="dark"] .logo-text {
-  color: #ecf1ff;
-}
-
-body[data-theme="dark"] .splash-theme-toggle {
-  background: rgba(15, 20, 25, 0.9);
-  border-color: rgba(0, 208, 132, 0.3);
 }
 
 .hidden {
@@ -355,26 +310,6 @@ body[data-theme="dark"] .splash-theme-toggle {
   animation: orbit 2.8s linear infinite;
 }
 
-.theme-toggle {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  display: grid;
-  place-items: center;
-  background: rgba(0, 208, 132, 0.08);
-  border: 2px solid rgba(0, 208, 132, 0.25);
-  color: #00a86b;
-  font-size: 1.1rem;
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-.theme-toggle:hover {
-  background: rgba(0, 208, 132, 0.12);
-  border-color: rgba(0, 208, 132, 0.4);
-  box-shadow: 0 8px 24px rgba(0, 208, 132, 0.15);
-}
-
 @keyframes orbit {
   0% {
     transform: translate(0, 0);
@@ -391,47 +326,6 @@ body[data-theme="dark"] .splash-theme-toggle {
   100% {
     transform: translate(0, 0);
   }
-}
-
-.theme-toggle {
-  width: 42px;
-  height: 42px;
-  border: 2px solid rgba(0, 208, 132, 0.25);
-  border-radius: 12px;
-  background: rgba(0, 208, 132, 0.08);
-  color: #00a86b;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-.theme-toggle:hover {
-  transform: translateY(-2px);
-  border-color: rgba(0, 208, 132, 0.4);
-  background: rgba(0, 208, 132, 0.12);
-  box-shadow: 0 8px 24px rgba(0, 208, 132, 0.15);
-}
-
-.theme-toggle i {
-  font-size: 0.95rem;
-}
-
-.splash-theme-toggle {
-  position: fixed;
-  right: 20px;
-  top: 20px;
-  z-index: 200;
-  background: rgba(255, 255, 255, 0.9);
-  border: 2px solid rgba(0, 208, 132, 0.2);
-  box-shadow: 0 8px 24px rgba(0, 208, 132, 0.15);
-}
-
-.splash-theme-toggle:hover {
-  background: rgba(255, 255, 255, 0.95);
-  border-color: rgba(0, 208, 132, 0.4);
-  box-shadow: 0 12px 32px rgba(0, 208, 132, 0.25);
 }
 
 /* Main */
@@ -869,6 +763,35 @@ body[data-theme="dark"] .splash-theme-toggle {
 
 .score-card {
   text-align: center;
+}
+
+.pdf-password-row {
+  margin-top: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.pdf-password-label {
+  font-size: 0.82rem;
+  color: var(--text-sub);
+  font-weight: 600;
+}
+
+.pdf-password-input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-input);
+  color: var(--text);
+  font-size: 0.95rem;
+  padding: 12px 14px;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.pdf-password-input:focus {
+  border-color: rgba(0, 208, 132, 0.55);
+  box-shadow: 0 0 0 3px rgba(0, 208, 132, 0.15);
 }
 
 .card-label {
@@ -2521,7 +2444,6 @@ body.cleo-splash {
 
 body.cleo-splash::before,
 body.cleo-splash::after,
-body.cleo-splash .splash-theme-toggle,
 body.cleo-splash .bg-objects-container {
   display: none;
 }

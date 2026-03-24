@@ -486,6 +486,14 @@ function renderPatterns(p) {
 function renderPillars(pillars) {
   if (!pillars) return;
 
+  const pillarKeys = [
+    "income_stability",
+    "spending_control",
+    "savings_behavior",
+    "bill_regularity",
+    "category_diversity"
+  ];
+
   const labels = {
     income_stability: "Income Stability",
     spending_control: "Spending Control",
@@ -505,9 +513,12 @@ function renderPillars(pillars) {
   const pillarsList = getEl("pillarsList");
   if (!pillarsList) return;
 
-  pillarsList.innerHTML = Object.entries(pillars).map(([k, v]) => {
+  pillarsList.innerHTML = pillarKeys
+    .filter((k) => Object.prototype.hasOwnProperty.call(pillars, k))
+    .map((k) => {
+      const v = pillars[k];
     const max = maxes[k] || 25;
-    const pct = Math.round((Number(v || 0) / max) * 100);
+    const pct = Math.max(0, Math.min(100, Math.round((Number(v || 0) / max) * 100)));
 
     return `
       <div class="pillar-item">

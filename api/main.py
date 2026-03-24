@@ -35,7 +35,7 @@ def root():
             "POST /api/analyze",
             "POST /api/score",
             "GET /api/history/{user_id}",
-            "GET /health",
+            "GET /api/health",
             "POST /api/parse/sms",
             "POST /api/parse/sms/batch",
             "POST /api/parse/csv",

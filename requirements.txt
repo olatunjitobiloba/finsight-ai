@@ -5,5 +5,4 @@ supabase
 httpx
 python-dotenv
 groq
-transformers
 python-multipart

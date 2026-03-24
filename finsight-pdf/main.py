@@ -1163,3 +1163,13 @@ def health():
                             "Stanbic", "Fidelity", "Sterling", "Polaris",
                             "FCMB", "Wema", "Ecobank"]
     }
+
+
+@app.get("/")
+def root():
+    return {
+        "service": "FinSight AI - PDF Parser",
+        "status": "running",
+        "docs": "/docs",
+        "health": "/health"
+    }

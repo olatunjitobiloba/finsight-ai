@@ -1,182 +1,236 @@
+
+
+---
+
 # FinSight AI
 
 **Predict. Prevent. Prosper.**
 
-FinSight AI is a Nigerian financial decision engine that turns raw bank SMS alerts into actionable financial intelligence. Paste your bank alerts, get your financial health score, see how many days until your money runs out, and receive AI-generated recommendations to fix your habits.
+FinSight AI is a financial intelligence platform built for Nigerians.
+It predicts when you will run out of money, explains why it keeps happening, and executes a fix instantly using Interswitch.
 
-Live at: [finsightng.vercel.app](https://finsightng.vercel.app)
+Built for the **Interswitch x Enyata BeyondTheRails Hackathon 2026**.
+
+---
+
+## TL;DR
+
+Paste your bank alerts. In seconds, FinSight tells you:
+
+* The exact day you will go broke
+* Why it keeps happening
+* What to do next
+* And executes the fix via Interswitch
+
+No spreadsheets. No manual tracking. No guesswork.
+
+---
+
+## The Problem
+
+Every Nigerian knows this moment:
+
+You check your account balance and your money is gone.
+
+Not because you did not earn.
+But because you did not see it coming.
+
+Most people do not fail financially due to lack of income.
+They fail because they lack a system that detects risky financial behavior early and helps them act in time.
+
+FinSight AI solves this by turning everyday financial data into a real-time early warning system.
+
+---
+
+## What Happens in 10 Seconds
+
+1. Paste bank SMS alerts or upload a statement
+2. Click Analyze
+
+FinSight instantly returns:
+
+* “You will run out of money in 8 days”
+* “You overspend every weekend”
+* “Food spending increased 42% this week”
+
+3. Click “Fix This”
+
+* “Reduce food spending by ₦1,500/day”
+* “Switch to a weekly data plan to save ₦8,000/month”
+
+4. Execute
+
+* Airtime or bill payment triggered via Interswitch
+
+FinSight does not stop at insight. It takes action.
+
+---
+
+## Signature Capability: Days to Zero
+
+FinSight AI predicts how many days remain before a user’s balance reaches zero based on real spending behavior.
+
+This transforms invisible financial risk into a clear, urgent signal that users can act on immediately.
+
+---
+
+## What Makes FinSight Different
+
+Other apps explain your past.
+FinSight confronts your future.
+
+| Traditional Finance Apps | FinSight AI                            |
+| ------------------------ | -------------------------------------- |
+| Show past transactions   | Predict future cash position           |
+| Require manual tracking  | Parse SMS, CSV, and PDF automatically  |
+| Provide generic advice   | Generate precise, personalized actions |
+| Stop at insights         | Execute actions via Interswitch        |
 
 ---
 
 ## What It Does
 
-Most Nigerians have no idea where their money goes. FinSight AI solves that by reading the SMS alerts already sitting on your phone and turning them into a clear financial picture — no bank login, no manual entry.
-
-- Parses Nigerian bank SMS alerts from GTBank, Access Bank, First Bank, Zenith Bank, and UBA
-- Calculates a Financial Health Score from 0 to 100 across five pillars
-- Predicts how many days until your balance hits zero based on your actual burn rate
-- Detects spending behavior patterns
-- Generates specific AI-powered actions to improve your financial position
-- Stores transaction history per user via Supabase
+* Converts raw financial data (SMS, CSV, PDF) into structured transactions
+* Predicts how long a user can sustain their current spending
+* Detects behavioral patterns such as weekend overspending and post-salary spikes
+* Generates data-driven, personalized financial actions
+* Executes those actions instantly using Interswitch payment infrastructure
 
 ---
 
-## Tech Stack
+## Why This Matters in Nigeria
 
-| Layer | Technology |
-|---|---|
-| Backend | FastAPI (Python) |
-| Frontend | HTML, CSS, JavaScript (static) |
-| Database | Supabase (PostgreSQL) |
-| Deployment | Vercel |
-| AI Actions | Custom rule-based engine with LLM integration |
+Nigeria does not yet have widespread open banking infrastructure.
+
+Most financial tools cannot access user data directly.
+FinSight solves this by using what every user already has:
+
+* Bank SMS alerts
+* Statement exports
+
+This creates a powerful alternative data layer for financial intelligence without requiring bank integrations.
 
 ---
 
-## API Endpoints
+## Interswitch Integration
 
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | `/` | Service status and endpoint list |
-| GET | `/api/health` | Health check |
-| POST | `/api/analyze` | Master endpoint — paste SMS, get full analysis |
-| POST | `/api/score` | Score a list of transactions directly |
-| GET | `/api/history/{user_id}` | Retrieve and re-analyze saved transactions |
-| POST | `/api/parse/sms` | Parse a single SMS |
-| POST | `/api/parse/sms/batch` | Parse multiple SMS messages |
-| POST | `/api/parse/csv` | Parse transactions from CSV file |
-| POST | `/api/parse/csv/text` | Parse transactions from CSV text |
-| POST | `/api/savings/plan` | Generate a savings plan |
-| POST | `/api/savings/analyze` | Analyze savings behavior |
-| POST | `/api/savings/bills/optimize` | Optimize bill payments |
-| GET | `/api/parse/banks` | List supported banks |
-| GET | `/api/parse/demo` | Demo parse output |
+FinSight connects insight to execution using Interswitch.
+
+Users can:
+
+* Purchase airtime or data based on optimized recommendations
+* Pay bills more efficiently (electricity, DSTV, subscriptions)
+* Act on financial decisions instantly without leaving the platform
+
+FinSight does not just analyze financial behavior.
+It changes it in real time.
+
+All transactions in this build are executed using the Interswitch Sandbox environment.
+
+---
+
+## Architecture Overview
+
+```
+Frontend (Vercel)
+     |
+     |-- SMS / CSV input  -->  /api/analyze
+     |-- PDF upload       -->  /parse-statement (HF Space)
+     |
+     v
+Backend (FastAPI on Vercel)
+     |
+     |-- SMS parser (multi-bank support)
+     |-- CSV parser + validation
+     |-- Score engine (financial health)
+     |-- Behavior detection engine
+     |-- AI action generator (data-driven)
+     |-- Interswitch integration layer
+     |
+     v
+PDF Parser Service (Hugging Face)
+     |
+     |-- Bank-specific PDF extraction
+     |-- Structured transaction output
+     |
+     v
+Supabase (PostgreSQL)
+     transactions, profiles, bill setups
+```
 
 ---
 
 ## Financial Health Score
 
-The score is built from five weighted pillars:
+FinSight computes a Financial Health Score across five pillars:
 
-| Pillar | Weight | What It Measures |
-|---|---|---|
-| Income Stability | 25% | Consistency and frequency of income |
-| Spending Control | 25% | Whether spending stays below income |
-| Savings Behavior | 20% | Evidence of savings activity |
-| Bill Regularity | 15% | Whether bills are paid consistently |
-| Category Diversity | 15% | Spread of spending across categories |
+* Income Stability
+* Spending Control
+* Savings Behavior
+* Bill Regularity
+* Category Diversity
 
-Score ranges:
-
-- 80 to 100 — Financially Healthy
-- 55 to 79 — Moderate Risk
-- 40 to 54 — Financially Unstable
-- 0 to 39 — Critical
+This score provides a clear, quantitative measure of financial stability and risk.
 
 ---
 
-## Days to Zero Predictor
+## Core Insight Engine
 
-Using actual daily spending data from parsed transactions, the engine calculates a daily burn rate and predicts the number of days before the current balance reaches zero. A volatility buffer is applied when spending is highly concentrated on specific days.
+FinSight’s intelligence is driven by:
 
----
+* Spending velocity (burn rate)
+* Income vs expense ratio
+* Temporal patterns (daily, weekly behavior)
+* Category-level analysis
 
-## Supported Banks
-
-- GTBank
-- Access Bank
-- First Bank
-- Zenith Bank
-- UBA
+Outputs are generated dynamically from user data, not hardcoded responses.
 
 ---
 
-## Project Structure
+## Live Services
 
-```
-finsight-ai/
-|
-|-- api/
-|   |-- main.py                  # FastAPI app entry point
-|   |-- routes/
-|       |-- analyze.py           # Master analysis endpoint
-|       |-- score.py             # Score endpoint
-|       |-- health.py            # Health check
-|       |-- parse.py             # SMS and CSV parsing routes
-|
-|-- services/
-|   |-- sms_parser.py            # Bank SMS parsing logic
-|   |-- score_engine.py          # Scoring, prediction, pattern detection
-|   |-- ai_actions.py            # AI recommendation engine
-|   |-- db.py                    # Supabase database layer
-|
-|-- frontend/                    # Static HTML/CSS/JS frontend
-|-- vercel.json                  # Vercel deployment configuration
-|-- requirements.txt
-```
+| Service     | URL                                                                                    |
+| ----------- | -------------------------------------------------------------------------------------- |
+| Application | [https://finsightng.vercel.app](https://finsightng.vercel.app)                         |
+| PDF Parser  | [https://margaret-06-finsight-pdf.hf.space](https://margaret-06-finsight-pdf.hf.space) |
 
 ---
 
-## Local Setup
+## Tech Stack
 
-**Requirements:** Python 3.10+
-
-```bash
-# Clone the repository
-git clone https://github.com/olatunjitobiloba/finsight-ai.git
-cd finsight-ai
-
-# Create and activate virtual environment
-python -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Set environment variables
-cp .env.example .env
-# Fill in SUPABASE_URL and SUPABASE_KEY in .env
-
-# Run the server
-uvicorn api.main:app --reload
-```
-
-Server runs at `http://localhost:8000`
+| Layer       | Technology                  |
+| ----------- | --------------------------- |
+| Backend     | FastAPI (Python)            |
+| Database    | Supabase (PostgreSQL)       |
+| AI          | Groq (LLaMA 3.3)            |
+| PDF Parsing | pdfplumber, pikepdf         |
+| Payments    | Interswitch Sandbox API     |
+| Hosting     | Vercel, Hugging Face Spaces |
+| Frontend    | HTML, CSS, JavaScript (PWA) |
 
 ---
 
-## Environment Variables
+## Team
 
-| Variable | Description |
-|---|---|
-| `SUPABASE_URL` | Your Supabase project URL |
-| `SUPABASE_KEY` | Your Supabase service role key (backend only) |
+| Name                     | Role                                                          |
+| ------------------------ | ------------------------------------------------------------- |
+| Olatunji Franklin (Toby) | ML Engineer — scoring, AI actions, frontend, deployment       |
+| Margaret Adeniran        | Backend Engineer — PDF parsing, Supabase, infrastructure      |
+| Pogbe                    | Systems Engineer — Interswitch integration, SMS parsing, APIs |
 
----
-
-## Deployment
-
-The project is deployed on Vercel. The `vercel.json` configuration routes all `/api/*` requests to the FastAPI backend and all other requests to the static frontend.
-
-To deploy your own instance:
-
-1. Fork the repository
-2. Connect to Vercel
-3. Add `SUPABASE_URL` and `SUPABASE_KEY` as environment variables in Vercel project settings
-4. Push to the `main` branch to trigger a production deployment
+Covenant University — Computer Engineering
+BeyondTheRails Hackathon 2026
 
 ---
 
-## Contributors
+## Final Thought
 
-| Name | GitHub | Role |
-|---|---|---|
-| Olatunjitobi Loba | [@olatunjitobiloba](https://github.com/olatunjitobiloba) | Project Lead, Score Engine, Architecture |
-| Margaret | [@madeniran2300324-beep](https://github.com/madeniran2300324-beep) | Analysis Endpoint, Core Backend Logic |
-| Emmanuel Pogbe | [@emmanuel-pogbe](https://github.com/emmanuel-pogbe) | Backend Contributions |
+FinSight AI is not a budgeting app.
+
+It is a financial early warning system that predicts failure before it happens and intervenes in time.
+
+It ensures users are never surprised by their own money again.
 
 ---
 
-## License
 
-MIT License. See `LICENSE` for details.

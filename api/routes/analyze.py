@@ -20,7 +20,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 # Internal services
-from services.sms_parser   import parse_sms_batch
+from services.sms_parser   import parse_multiple_sms
 from services.score_engine import (
     calculate_score,
     days_to_zero,
@@ -73,7 +73,7 @@ async def analyze(request: AnalyzeRequest):
 
     # ── 3. Parse SMS messages
     try:
-        parse_result = parse_sms_batch(sms_lines)
+        parse_result = parse_multiple_sms(sms_lines)
         transactions = parse_result.get("parsed", [])
     except Exception as e:
         raise HTTPException(

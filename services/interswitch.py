@@ -280,3 +280,103 @@ def validate_customer(biller_code: str, customer_id: str) -> dict:
         }
     except Exception:
         return {"valid": False, "customer_name": "", "address": ""}
+
+
+def simulate_saving(amount: float, plan_type: str, user_profile: Optional[dict] = None) -> dict:
+    """
+    Build a simple savings plan preview.
+    This is intentionally provider-agnostic and does not execute a payment.
+    """
+    if amount <= 0:
+        return {
+            "success": False,
+            "error": "Amount must be greater than zero",
+        }
+
+    frequencies = {
+        "weekly": 4,
+        "monthly": 1,
+        "quarterly": 1 / 3,
+        "custom": 1,
+    }
+    factor = frequencies.get((plan_type or "").lower(), 1)
+    monthly_equivalent = round(amount * factor, 2)
+
+    return {
+        "success": True,
+        "message": "Savings plan prepared",
+        "plan": {
+            "amount": round(amount, 2),
+            "plan_type": (plan_type or "monthly").lower(),
+            "estimated_monthly_contribution": monthly_equivalent,
+        },
+        "user_profile": user_profile or {},
+        "provider": "Interswitch",
+        "mode": "simulation",
+    }
+
+
+def simulate_savings(transactions: list, user_profile: Optional[dict] = None) -> dict:
+    """
+    Analyze spend vs income and suggest a savings target.
+    """
+    income = 0.0
+    spend = 0.0
+
+    for txn in transactions or []:
+        amount = float(txn.get("amount", 0) or 0)
+        tx_type = str(txn.get("type", "")).lower()
+        if tx_type == "credit":
+            income += amount
+        elif tx_type == "debit":
+            spend += amount
+
+    net = income - spend
+    suggested = round(max(0.0, income * 0.2), 2)
+
+    return {
+        "summary": {
+            "income": round(income, 2),
+            "spending": round(spend, 2),
+            "net": round(net, 2),
+        },
+        "recommendation": {
+            "target_savings": suggested,
+            "rule": "20_percent_of_income",
+        },
+        "user_profile": user_profile or {},
+        "provider": "Interswitch",
+        "mode": "simulation",
+    }
+
+
+def simulate_bill_optimization(transactions: list) -> dict:
+    """
+    Group recurring bill-like categories and return optimization hints.
+    """
+    tracked_categories = {"electricity", "data", "airtime", "internet", "tv", "rent"}
+    totals = {}
+
+    for txn in transactions or []:
+        category = str(txn.get("category", "")).strip().lower()
+        if not category and txn.get("description"):
+            category = str(txn.get("description", "")).strip().lower()
+
+        if category in tracked_categories:
+            totals[category] = totals.get(category, 0.0) + float(txn.get("amount", 0) or 0)
+
+    suggestions = []
+    for category, total in sorted(totals.items(), key=lambda item: item[1], reverse=True):
+        suggestions.append({
+            "category": category,
+            "current_spend": round(total, 2),
+            "suggested_cap": round(total * 0.9, 2),
+            "estimated_monthly_saving": round(total * 0.1, 2),
+        })
+
+    return {
+        "tracked_totals": {k: round(v, 2) for k, v in totals.items()},
+        "suggestions": suggestions,
+        "provider": "Interswitch",
+        "mode": "simulation",
+    }

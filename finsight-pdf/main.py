@@ -695,13 +695,13 @@ def _extract_from_text(full_text: str, bank: str) -> list:
 # -------------------------------------------------
 # SHARED PDF PARSE LOGIC
 # -------------------------------------------------
-def _parse_pdf_bytes(pdf_bytes: bytes, account_number: str = "", filename: str = "file.pdf") -> dict:
-    decrypted = _decrypt_pdf(pdf_bytes, account_number)
+def _parse_pdf_bytes(pdf_bytes: bytes, password: str = "", filename: str = "file.pdf") -> dict:
+    decrypted = _decrypt_pdf(pdf_bytes, password)
     if decrypted is None:
         return {
             "success": False,
             "filename": filename,
-            "reason": "Wrong password. Enter your full bank account number.",
+            "reason": "Wrong password or encrypted PDF. Enter the correct password.",
             "transactions": []
         }
 
@@ -874,7 +874,7 @@ async def _download_pdf(url: str) -> bytes:
 @app.post("/api/parse/pdf")
 async def parse_pdf(
     files: List[UploadFile] = File(...),
-    account_number: str = Form(default="")
+    password: str = Form(default="")
 ):
     if not PDF_AVAILABLE:
         raise HTTPException(status_code=503,
@@ -885,7 +885,7 @@ async def parse_pdf(
 
     for file in files:
         pdf_bytes = await file.read()
-        result = _parse_pdf_bytes(pdf_bytes, account_number, file.filename)
+        result = _parse_pdf_bytes(pdf_bytes, password, file.filename)
 
         if result["success"]:
             all_transactions.extend(result["transactions"])
@@ -939,7 +939,7 @@ async def parse_statement(request: ParseStatementRequest):
 
     result = _parse_pdf_bytes(
         pdf_bytes,
-        account_number=request.password or "",
+        password=request.password or "",
         filename=request.file_url.split("/")[-1]
     )
 

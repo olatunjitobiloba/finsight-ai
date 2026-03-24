@@ -214,7 +214,7 @@ Outputs are generated dynamically from user data, not hardcoded responses.
 
 | Name                     | Role                                                          |
 | ------------------------ | ------------------------------------------------------------- |
-| Olatunji Franklin (Toby) | ML Engineer — scoring, AI actions, frontend, deployment       |
+| Olatunji Oluwatobiloba | ML Engineer — scoring, AI actions, frontend, deployment       |
 | Margaret Adeniran        | Backend Engineer — PDF parsing, Supabase, infrastructure      |
 | Pogbe                    | Systems Engineer — Interswitch integration, SMS parsing, APIs |
 

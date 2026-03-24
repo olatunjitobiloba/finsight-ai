@@ -770,13 +770,19 @@ def _save_to_supabase(user_id: str, transactions: list) -> dict:
 
     for txn in transactions:
         try:
+            txn_date = str(txn.get("transaction_date", ""))
+            txn_amount = txn.get("amount", 0)
+            txn_type = txn.get("type", "")
+            txn_desc = str(txn.get("description", ""))
+            txn_desc_prefix = txn_desc[:50]
+
             # Build a stable, user-scoped transaction fingerprint.
             raw = (
-                f"{user_id}|{txn.get('transaction_date', '')}|{txn.get('amount', 0)}|"
-                f"{txn.get('type', '')}|{str(txn.get('description', ''))[:50]}"
+                f"{user_id}|{txn_date}|{txn_amount}|{txn_type}|{txn_desc_prefix}"
             )
             txn_hash = hashlib.sha256(raw.encode()).hexdigest()
 
+            # Fast path: skip if an exact hash already exists.
             existing = (
                 supabase.table("transactions")
                 .select("id")
@@ -787,13 +793,37 @@ def _save_to_supabase(user_id: str, transactions: list) -> dict:
             if existing.data:
                 continue
 
+            # Legacy fallback: match by transaction content for rows created before hash existed.
+            content_matches = (
+                supabase.table("transactions")
+                .select("id,description,hash")
+                .eq("user_id", user_id)
+                .eq("transaction_date", txn_date)
+                .eq("amount", txn_amount)
+                .eq("type", txn_type)
+                .limit(20)
+                .execute()
+            )
+
+            matched_row = None
+            for row in (content_matches.data or []):
+                row_desc_prefix = str(row.get("description") or "")[:50]
+                if row_desc_prefix == txn_desc_prefix:
+                    matched_row = row
+                    break
+
+            if matched_row:
+                if not matched_row.get("hash"):
+                    supabase.table("transactions").update({"hash": txn_hash}).eq("id", matched_row["id"]).execute()
+                continue
+
             row = {
                 "user_id": user_id,
-                "amount": txn.get("amount"),
-                "type": txn.get("type"),
+                "amount": txn_amount,
+                "type": txn_type,
                 "description": txn.get("description"),
                 "category": txn.get("category"),
-                "transaction_date": txn.get("transaction_date"),
+                "transaction_date": txn_date,
                 "balance": txn.get("balance"),
                 "bank": txn.get("bank"),
                 "source": "pdf",

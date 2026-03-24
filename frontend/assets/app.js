@@ -15,6 +15,8 @@ const API_BASE = window.location.hostname === "localhost"
   ? "http://localhost:8000"
   : "https://finsight-ai.vercel.app";
 const PDF_BASE = "https://margaret-06-finsight-pdf.hf.space";
+const IS_LOCALHOST = window.location.hostname === "localhost";
+const ALLOW_MOCK_FALLBACK = IS_LOCALHOST;
 
 // State
 let currentResults = null;
@@ -169,23 +171,57 @@ async function analyzeCSV() {
     return;
   }
 
-  await runAnalysis(
-    { csv_content: csvContent },
-    "/api/parse/csv",
-    async (parseResult) => {
-      if (!parseResult?.parsed || !Array.isArray(parseResult.parsed)) {
-        throw new Error("CSV parse failed");
-      }
+  showLoading(true);
+  hideResults();
 
-      return fetchJson(`${API_BASE}/api/analyze`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sms_text: buildSMSFromTransactions(parseResult.parsed)
-        })
-      });
+  try {
+    await animateLoadingSteps();
+
+    const form = new FormData();
+    form.append("csv_text", csvContent);
+
+    const parseResponse = await fetch(`${API_BASE}/api/parse/csv/text`, {
+      method: "POST",
+      body: form
+    });
+
+    if (!parseResponse.ok) {
+      throw new Error(`CSV parse failed: ${parseResponse.status}`);
     }
-  );
+
+    const parseResult = await parseResponse.json();
+    const parsedTransactions = parseResult?.data?.parsed;
+    if (!parseResult?.success || !Array.isArray(parsedTransactions) || parsedTransactions.length === 0) {
+      throw new Error(parseResult?.error || "CSV parsing returned no transactions");
+    }
+
+    const analyzeResponse = await fetchJson(`${API_BASE}/api/analyze`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sms_text: buildSMSFromTransactions(parsedTransactions)
+      })
+    });
+
+    currentResults = analyzeResponse;
+    showLoading(false);
+    renderResults(analyzeResponse);
+  } catch (err) {
+    showLoading(false);
+    const message = err?.message || "CSV analysis failed";
+
+    if (ALLOW_MOCK_FALLBACK) {
+      console.warn("CSV analysis error - using mock data:", message);
+      showToast("CSV API unavailable in local mode. Showing demo data.", "warning");
+      const mock = getMockResults();
+      currentResults = mock;
+      renderResults(mock);
+      return;
+    }
+
+    console.warn("CSV analysis error:", message);
+    showToast(`CSV analysis failed: ${message}`, "error");
+  }
 }
 
 async function analyzePDF() {
@@ -231,11 +267,19 @@ async function analyzePDF() {
     renderResults(analyzeResponse);
   } catch (err) {
     showLoading(false);
-    console.warn("PDF analysis error:", err?.message || err);
-    showToast("PDF analysis not available. Using demo data.", "warning");
-    const mock = getMockResults();
-    currentResults = mock;
-    renderResults(mock);
+    const message = err?.message || "PDF analysis failed";
+
+    if (ALLOW_MOCK_FALLBACK) {
+      console.warn("PDF analysis error - using mock data:", message);
+      showToast("PDF API unavailable in local mode. Showing demo data.", "warning");
+      const mock = getMockResults();
+      currentResults = mock;
+      renderResults(mock);
+      return;
+    }
+
+    console.warn("PDF analysis error:", message);
+    showToast(`PDF analysis failed: ${message}`, "error");
   }
 }
 
@@ -296,11 +340,19 @@ async function runAnalysis(payload, endpoint, transformer = null) {
     renderResults(data);
   } catch (err) {
     showLoading(false);
-    console.warn("API unavailable - using mock data:", err?.message || err);
-    showToast("Demo mode - API not connected.", "warning");
-    const mock = getMockResults();
-    currentResults = mock;
-    renderResults(mock);
+    const message = err?.message || "Analysis failed";
+
+    if (ALLOW_MOCK_FALLBACK) {
+      console.warn("API unavailable in local mode - using mock data:", message);
+      showToast("Local demo mode - API not connected.", "warning");
+      const mock = getMockResults();
+      currentResults = mock;
+      renderResults(mock);
+      return;
+    }
+
+    console.warn("Analysis failed:", message);
+    showToast(`Analysis failed: ${message}`, "error");
   }
 }
 

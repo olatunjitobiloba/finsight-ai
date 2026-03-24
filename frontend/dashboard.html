@@ -29,6 +29,13 @@
         <span class="logo-text">FinSight <span class="logo-ai">AI</span></span>
       </div>
       <div class="header-right">
+        <button class="history-button" id="historyBtn" onclick="showHistoryModal()" title="View analysis history" type="button">
+          <i class="fa-solid fa-history" aria-hidden="true"></i>
+          History
+        </button>
+        <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark mode" type="button" title="Toggle theme">
+          <i class="fa-solid fa-moon" aria-hidden="true"></i>
+        </button>
         <div class="header-tagline">Money, but cinematic.</div>
         <div class="brand-mark" aria-hidden="true">
           <span class="brand-mark-dot"></span>
@@ -134,7 +141,7 @@
       <div class="panel-header">
         <h2>Analyze Your Finances</h2>
         <p class="panel-sub">
-          Paste SMS alerts or upload a bank statement CSV.
+          Paste SMS alerts, upload a CSV statement, or import a PDF statement.
           FinSight reconstructs your financial story instantly.
         </p>
       </div>
@@ -147,6 +154,10 @@
         <button class="tab" id="tabCSV" onclick="switchTab('csv')" role="tab" aria-selected="false" type="button">
           <i class="fa-solid fa-file-csv" aria-hidden="true"></i>
           CSV Statement
+        </button>
+        <button class="tab" id="tabPDF" onclick="switchTab('pdf')" role="tab" aria-selected="false" type="button">
+          <i class="fa-solid fa-file-pdf" aria-hidden="true"></i>
+          PDF Statement
         </button>
       </div>
 
@@ -205,6 +216,46 @@
           </button>
           <button class="btn btn-ghost" onclick="loadDemoCSV()" type="button">
             Load Demo CSV
+          </button>
+        </div>
+      </div>
+
+      <div class="tab-content hidden" id="contentPDF" role="tabpanel" aria-labelledby="tabPDF">
+        <div
+          class="pdf-upload-area"
+          id="pdfDropZone"
+          ondragover="event.preventDefault()"
+          ondrop="handlePDFDrop(event)"
+        >
+          <div class="pdf-icon"><i class="fa-solid fa-file-pdf" aria-hidden="true"></i></div>
+          <div class="pdf-upload-text">Drag and drop your bank statement PDF</div>
+          <div class="pdf-upload-sub">Supports encrypted and standard PDFs from all Nigerian banks</div>
+          <label class="btn btn-ghost pdf-file-label">
+            Browse File
+            <input
+              type="file"
+              id="pdfFileInput"
+              accept=".pdf"
+              class="pdf-file-input"
+              onchange="handlePDFFile(event)"
+            />
+          </label>
+        </div>
+
+        <div class="pdf-preview hidden" id="pdfPreview">
+          <div class="pdf-preview-header">
+            <span id="pdfFileName">statement.pdf</span>
+            <span id="pdfStatus">Ready to analyze</span>
+          </div>
+        </div>
+
+        <div class="input-actions">
+          <button class="btn btn-primary" onclick="analyzePDF()" type="button">
+            <span class="btn-icon"><i class="fa-solid fa-magnifying-glass-chart" aria-hidden="true"></i></span>
+            Extract & Analyze PDF
+          </button>
+          <button class="btn btn-ghost" onclick="loadDemoPDF()" type="button">
+            Load Demo PDF
           </button>
         </div>
       </div>
@@ -339,6 +390,37 @@
       <button class="btn btn-ghost" onclick="closeAuthModal(true)" type="button">
         Cancel
       </button>
+    </div>
+  </div>
+
+  <!-- History Modal -->
+  <div class="modal hidden" id="historyModal" role="dialog" aria-modal="true" aria-labelledby="historyModalTitle">
+    <div class="modal-box modal-large">
+      <div class="modal-header">
+        <div class="modal-title" id="historyModalTitle">Analysis History</div>
+        <button class="modal-close" onclick="closeHistoryModal()" type="button">
+          <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+        </button>
+      </div>
+      <div class="modal-content">
+        <div class="history-loading hidden" id="historyLoading">
+          <div class="spinner-small"></div>
+          <p>Loading your history...</p>
+        </div>
+        <div class="history-list hidden" id="historyList">
+          <!-- History items will be populated here -->
+        </div>
+        <div class="history-empty" id="historyEmpty">
+          <i class="fa-solid fa-inbox" aria-hidden="true"></i>
+          <p>No analysis history yet.</p>
+          <p class="history-empty-sub">Run your first analysis to get started.</p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeHistoryModal()" type="button">
+          Close
+        </button>
+      </div>
     </div>
   </div>
 

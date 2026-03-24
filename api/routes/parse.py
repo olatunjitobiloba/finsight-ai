@@ -2,6 +2,8 @@
 Parse API Routes - SMS and CSV parsing endpoints
 """
 
+import httpx
+import os
 from fastapi import APIRouter, HTTPException, Form, File, UploadFile
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
@@ -184,6 +186,69 @@ async def parse_csv_text_endpoint(csv_text: str = Form(...)):
             data=None,
             error=f"CSV parsing error: {str(e)}"
         )
+
+
+@router.post("/parse/pdf")
+async def parse_pdf_endpoint(file: UploadFile = File(...)):
+    """
+    Parse PDF statement and extract transaction data.
+    
+    Args:
+        file: PDF file upload
+        
+    Returns:
+        Parsed transaction data with statistics
+    """
+    try:
+        # Validate file type
+        if not file.filename.endswith('.pdf'):
+            raise HTTPException(status_code=400, detail="Only PDF files are allowed")
+        
+        # Read file content
+        pdf_bytes = await file.read()
+        
+        # Try to use the finsight-pdf service
+        pdf_service_url = os.getenv("PDF_SERVICE_URL", "https://margaret-06-finsight-pdf.hf.space")
+        
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                # Create form data for the PDF service
+                files = {'files': (file.filename, pdf_bytes, 'application/pdf')}
+                response = await client.post(
+                    f"{pdf_service_url}/api/parse/pdf",
+                    files=files
+                )
+                
+                if response.status_code == 200:
+                    pdf_result = response.json()
+                    # Transform the PDF service response to match our format
+                    return {
+                        "success": True,
+                        "parsed": pdf_result.get("transactions", []),
+                        "total": len(pdf_result.get("transactions", [])),
+                        "files": pdf_result.get("files", []),
+                        "error": None
+                    }
+                else:
+                    raise HTTPException(
+                        status_code=response.status_code,
+                        detail="PDF service parsing failed"
+                    )
+        except httpx.RequestError:
+            # Fallback: return mock data or error message
+            raise HTTPException(
+                status_code=503,
+                detail="PDF parsing service temporarily unavailable"
+            )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        return {
+            "success": False,
+            "parsed": [],
+            "error": f"PDF parsing error: {str(e)}"
+        }
 
 
 @router.post("/savings/plan")

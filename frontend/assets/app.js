@@ -19,6 +19,7 @@ const PDF_BASE = "https://margaret-06-finsight-pdf.hf.space";
 // State
 let currentResults = null;
 let csvContent = null;
+let pdfFile = null;
 let activeTab = "sms";
 
 // Demo data
@@ -50,17 +51,21 @@ function getEl(id) {
 }
 
 function switchTab(tab) {
-  activeTab = tab === "csv" ? "csv" : "sms";
+  activeTab = tab === "csv" ? "csv" : (tab === "pdf" ? "pdf" : "sms");
 
   getEl("contentSMS")?.classList.toggle("hidden", activeTab !== "sms");
   getEl("contentCSV")?.classList.toggle("hidden", activeTab !== "csv");
+  getEl("contentPDF")?.classList.toggle("hidden", activeTab !== "pdf");
 
   const tabSMS = getEl("tabSMS");
   const tabCSV = getEl("tabCSV");
+  const tabPDF = getEl("tabPDF");
   tabSMS?.classList.toggle("active", activeTab === "sms");
   tabCSV?.classList.toggle("active", activeTab === "csv");
+  tabPDF?.classList.toggle("active", activeTab === "pdf");
   tabSMS?.setAttribute("aria-selected", activeTab === "sms" ? "true" : "false");
   tabCSV?.setAttribute("aria-selected", activeTab === "csv" ? "true" : "false");
+  tabPDF?.setAttribute("aria-selected", activeTab === "pdf" ? "true" : "false");
 }
 
 function loadDemoData() {
@@ -106,6 +111,40 @@ function handleCSVDrop(event) {
   handleCSVFile({ target: { files: [file] } });
 }
 
+function handlePDFFile(event) {
+  const file = event?.target?.files?.[0];
+  if (!file) return;
+
+  if (!file.name.toLowerCase().endsWith(".pdf")) {
+    showToast("Please select a .pdf file.", "error");
+    return;
+  }
+
+  pdfFile = file;
+  const fileName = getEl("pdfFileName");
+  const status = getEl("pdfStatus");
+  if (fileName) fileName.textContent = file.name;
+  if (status) status.textContent = `${(file.size / 1024 / 1024).toFixed(2)} MB`;
+  getEl("pdfPreview")?.classList.remove("hidden");
+  getEl("pdfDropZone")?.classList.add("has-file");
+  showToast(`${file.name} loaded.`);
+}
+
+function handlePDFDrop(event) {
+  event.preventDefault();
+  const file = event?.dataTransfer?.files?.[0];
+  if (!file || !file.name.toLowerCase().endsWith(".pdf")) {
+    showToast("Please drop a .pdf file.", "error");
+    return;
+  }
+
+  const input = getEl("pdfFileInput");
+  if (input && event.dataTransfer?.files) {
+    input.files = event.dataTransfer.files;
+  }
+  handlePDFFile({ target: { files: [file] } });
+}
+
 function showCSVPreview(name, rows) {
   const fileName = getEl("csvFileName");
   const rowCount = getEl("csvRowCount");
@@ -147,6 +186,69 @@ async function analyzeCSV() {
       });
     }
   );
+}
+
+async function analyzePDF() {
+  if (!pdfFile) {
+    showToast("Please upload or load a PDF file first.", "error");
+    return;
+  }
+
+  showLoading(true);
+  hideResults();
+
+  try {
+    await animateLoadingSteps();
+
+    const formData = new FormData();
+    formData.append("file", pdfFile);
+
+    const response = await fetch(`${API_BASE}/api/parse/pdf`, {
+      method: "POST",
+      body: formData
+    });
+
+    if (!response.ok) {
+      throw new Error(`PDF parse failed: ${response.status}`);
+    }
+
+    const parseResult = await response.json();
+
+    if (!parseResult?.parsed || !Array.isArray(parseResult.parsed)) {
+      throw new Error("PDF parsing returned invalid data");
+    }
+
+    const analyzeResponse = await fetchJson(`${API_BASE}/api/analyze`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sms_text: buildSMSFromTransactions(parseResult.parsed)
+      })
+    });
+
+    currentResults = analyzeResponse;
+    showLoading(false);
+    renderResults(analyzeResponse);
+  } catch (err) {
+    showLoading(false);
+    console.warn("PDF analysis error:", err?.message || err);
+    showToast("PDF analysis not available. Using demo data.", "warning");
+    const mock = getMockResults();
+    currentResults = mock;
+    renderResults(mock);
+  }
+}
+
+function loadDemoPDF() {
+  pdfFile = { name: "demo-statement.pdf" };
+  const fileName = getEl("pdfFileName");
+  const status = getEl("pdfStatus");
+  if (fileName) fileName.textContent = "demo-statement.pdf";
+  if (status) status.textContent = "Ready to analyze";
+  getEl("pdfPreview")?.classList.remove("hidden");
+  getEl("pdfDropZone")?.classList.add("has-file");
+  switchTab("pdf");
+  showToast("Demo PDF loaded. Click Extract & Analyze.");
 }
 
 function buildSMSFromTransactions(transactions) {
@@ -485,6 +587,105 @@ async function getSupabaseSession() {
   if (!window.supabase?.auth) return null;
   const { data } = await window.supabase.auth.getSession();
   return data?.session || null;
+}
+
+async function showHistoryModal() {
+  const session = await getSupabaseSession();
+  if (!session) {
+    showToast("Please sign in to view your history.", "info");
+    return;
+  }
+
+  const modal = getEl("historyModal");
+  if (!modal) {
+    showToast("History modal not available.", "error");
+    return;
+  }
+
+  modal.classList.remove("hidden");
+  await loadHistory(session.user.id);
+}
+
+function closeHistoryModal() {
+  const modal = getEl("historyModal");
+  if (!modal) return;
+  modal.classList.add("hidden");
+}
+
+async function loadHistory(userId) {
+  const loading = getEl("historyLoading");
+  const list = getEl("historyList");
+  const empty = getEl("historyEmpty");
+
+  if (!loading || !list || !empty) return;
+
+  loading.classList.remove("hidden");
+  list.classList.add("hidden");
+  empty.classList.add("hidden");
+
+  try {
+    const response = await fetchJson(`${API_BASE}/api/history/${userId}`, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" }
+    });
+
+    if (response?.analyses && Array.isArray(response.analyses) && response.analyses.length > 0) {
+      renderHistoryList(response.analyses);
+      list.classList.remove("hidden");
+    } else {
+      empty.classList.remove("hidden");
+    }
+  } catch (err) {
+    console.warn("Failed to load history:", err?.message || err);
+    empty.classList.remove("hidden");
+    showToast("Unable to load history.", "warning");
+  } finally {
+    loading.classList.add("hidden");
+  }
+}
+
+function renderHistoryList(analyses) {
+  const list = getEl("historyList");
+  if (!list) return;
+
+  list.innerHTML = analyses.slice(0, 20).map((analysis, idx) => {
+    const date = new Date(analysis.timestamp || Date.now());
+    const dateStr = date.toLocaleDateString("en-NG", { 
+      month: "short", 
+      day: "numeric", 
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+    const score = analysis.score?.score || "-";
+    const label = analysis.score?.label || "Unknown";
+    const color = analysis.score?.color || "gray";
+
+    return `
+      <div class="history-item" style="animation-delay:${idx * 100}ms">
+        <div class="history-item-left">
+          <div class="history-score ${color}">${score}</div>
+          <div class="history-info">
+            <div class="history-label">${label}</div>
+            <div class="history-date">${dateStr}</div>
+          </div>
+        </div>
+        <div class="history-actions">
+          <button class="btn btn-ghost history-view-btn" onclick="viewAnalysis('${analysis.id}')" type="button">
+            View
+          </button>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  list.classList.remove("hidden");
+}
+
+function viewAnalysis(analysisId) {
+  showToast(`Loading analysis ${analysisId}...`);
+  closeHistoryModal();
+  // TODO: Implement loading and displaying saved analysis
 }
 
 async function simulateSave() {
@@ -898,9 +1099,41 @@ function setupParallaxCards() {
   onScroll();
 }
 
+function setupThemeToggle() {
+  const toggle = getEl("themeToggle");
+  if (!toggle) return;
+
+  const savedTheme = localStorage.getItem("finsight-theme") || "cleo";
+  const isDark = savedTheme === "dark";
+  
+  document.body.setAttribute("data-theme", isDark ? "dark" : "light");
+  document.body.classList.toggle("cleo-mode", !isDark);
+  updateThemeIcon();
+
+  toggle.addEventListener("click", () => {
+    const currentTheme = document.body.getAttribute("data-theme") || "light";
+    const newTheme = currentTheme === "dark" ? "light" : "dark";
+    document.body.setAttribute("data-theme", newTheme);
+    document.body.classList.toggle("cleo-mode", newTheme !== "dark");
+    localStorage.setItem("finsight-theme", newTheme);
+    updateThemeIcon();
+    showToast(`Switched to ${newTheme === "dark" ? "dark" : "light"} mode.`);
+  });
+}
+
+function updateThemeIcon() {
+  const toggle = getEl("themeToggle");
+  const icon = toggle?.querySelector("i");
+  if (!toggle || !icon) return;
+  const isDark = document.body.getAttribute("data-theme") === "dark";
+  icon.className = isDark ? "fa-solid fa-sun" : "fa-solid fa-moon";
+  toggle.title = isDark ? "Switch to light mode" : "Switch to dark mode";
+}
+
 window.addEventListener("DOMContentLoaded", () => {
   updateThemeColorMeta();
   switchTab("sms");
+  setupThemeToggle();
 
   if (window.supabase?.auth) {
     window.supabase.auth.onAuthStateChange((_event, session) => {
@@ -929,12 +1162,19 @@ window.addEventListener("DOMContentLoaded", () => {
 window.switchTab = switchTab;
 window.loadDemoData = loadDemoData;
 window.loadDemoCSV = loadDemoCSV;
+window.loadDemoPDF = loadDemoPDF;
 window.handleCSVFile = handleCSVFile;
 window.handleCSVDrop = handleCSVDrop;
+window.handlePDFFile = handlePDFFile;
+window.handlePDFDrop = handlePDFDrop;
 window.analyzeNow = analyzeNow;
 window.analyzeCSV = analyzeCSV;
+window.analyzePDF = analyzePDF;
 window.fixThis = fixThis;
 window.simulateSave = simulateSave;
 window.simulateBill = simulateBill;
 window.signInWithGoogle = signInWithGoogle;
 window.closeAuthModal = closeAuthModal;
+window.showHistoryModal = showHistoryModal;
+window.closeHistoryModal = closeHistoryModal;
+window.viewAnalysis = viewAnalysis;

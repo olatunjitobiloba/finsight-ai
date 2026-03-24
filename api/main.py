@@ -40,6 +40,7 @@ def root():
             "POST /api/parse/sms/batch",
             "POST /api/parse/csv",
             "POST /api/parse/csv/text",
+            "POST /api/parse/pdf",
             "POST /api/savings/plan",
             "POST /api/savings/analyze",
             "POST /api/savings/bills/optimize",

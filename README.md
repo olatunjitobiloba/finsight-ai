@@ -1,68 +1,93 @@
 # FinSight AI
 
-> Predict. Prevent. Prosper.
+**Predict. Prevent. Prosper.**
 
-FinSight AI is a financial intelligence platform built for Nigerians. It turns bank SMS alerts, PDF statements, and CSV exports into a real-time financial health score, behavioral pattern analysis, and actionable AI-generated recommendations — powered by Interswitch for payment execution.
+FinSight AI is a Nigerian financial decision engine that turns raw bank SMS alerts into actionable financial intelligence. Paste your bank alerts, get your financial health score, see how many days until your money runs out, and receive AI-generated recommendations to fix your habits.
 
-Built for the Interswitch x Enyata BeyondTheRails Hackathon 2026.
-
----
-
-## Live Deployments
-
-| Service | URL |
-|---|---|
-| Main Backend | https://finsightng.vercel.app |
-| PDF Parser Service | https://margaret-06-finsight-pdf.hf.space |
-| Frontend | https://finsightng.vercel.app |
+Live at: [finsightng.vercel.app](https://finsightng.vercel.app)
 
 ---
 
 ## What It Does
 
-Most Nigerians do not run out of money because they are poor. They run out because they have no warning system.
+Most Nigerians have no idea where their money goes. FinSight AI solves that by reading the SMS alerts already sitting on your phone and turning them into a clear financial picture — no bank login, no manual entry.
 
-FinSight AI solves this by:
-
-- Parsing Nigerian bank SMS alerts, PDF statements, and CSV exports automatically
-- Computing a Financial Health Score (0-100) across 5 pillars
-- Predicting days until zero balance based on current burn rate
-- Detecting behavioral patterns such as post-income spending spikes and weekend overspending
-- Generating personalized AI financial advice via Groq LLM
-- Executing savings and bill payment actions through Interswitch Sandbox APIs
+- Parses Nigerian bank SMS alerts from GTBank, Access Bank, First Bank, Zenith Bank, and UBA
+- Calculates a Financial Health Score from 0 to 100 across five pillars
+- Predicts how many days until your balance hits zero based on your actual burn rate
+- Detects spending behavior patterns
+- Generates specific AI-powered actions to improve your financial position
+- Stores transaction history per user via Supabase
 
 ---
 
-## Architecture
+## Tech Stack
 
-```
-Frontend (Vercel Static)
-     |
-     |-- SMS / CSV input  -->  POST /api/analyze       (Vercel)
-     |-- PDF upload       -->  POST /parse-statement   (Hugging Face)
-     |
-     v
-Main Backend (Vercel Serverless - FastAPI)
-     |
-     |-- services/sms_parser.py      SMS extraction (Access, GTBank, UBA, Zenith, FirstBank)
-     |-- services/csv_parser.py      CSV transaction parsing
-     |-- services/score_engine.py    Financial Health Score engine
-     |-- services/ai_actions.py      Data-driven action generator
-     |-- services/interswitch.py     Interswitch Sandbox integration
-     |-- services/db.py              Supabase database layer
-     |
-     v
-PDF Parser Service (Hugging Face Spaces - Docker)
-     |
-     |-- UBA precision text parser
-     |-- Access Bank precision text parser
-     |-- 10 additional bank configs (GTBank, Zenith, FirstBank, etc.)
-     |-- Supabase save on parse
-     |-- Groq AI insights generation
-     v
-Supabase (PostgreSQL)
-     transactions, user_bank_profiles, bill_setups
-```
+| Layer | Technology |
+|---|---|
+| Backend | FastAPI (Python) |
+| Frontend | HTML, CSS, JavaScript (static) |
+| Database | Supabase (PostgreSQL) |
+| Deployment | Vercel |
+| AI Actions | Custom rule-based engine with LLM integration |
+
+---
+
+## API Endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/` | Service status and endpoint list |
+| GET | `/api/health` | Health check |
+| POST | `/api/analyze` | Master endpoint — paste SMS, get full analysis |
+| POST | `/api/score` | Score a list of transactions directly |
+| GET | `/api/history/{user_id}` | Retrieve and re-analyze saved transactions |
+| POST | `/api/parse/sms` | Parse a single SMS |
+| POST | `/api/parse/sms/batch` | Parse multiple SMS messages |
+| POST | `/api/parse/csv` | Parse transactions from CSV file |
+| POST | `/api/parse/csv/text` | Parse transactions from CSV text |
+| POST | `/api/savings/plan` | Generate a savings plan |
+| POST | `/api/savings/analyze` | Analyze savings behavior |
+| POST | `/api/savings/bills/optimize` | Optimize bill payments |
+| GET | `/api/parse/banks` | List supported banks |
+| GET | `/api/parse/demo` | Demo parse output |
+
+---
+
+## Financial Health Score
+
+The score is built from five weighted pillars:
+
+| Pillar | Weight | What It Measures |
+|---|---|---|
+| Income Stability | 25% | Consistency and frequency of income |
+| Spending Control | 25% | Whether spending stays below income |
+| Savings Behavior | 20% | Evidence of savings activity |
+| Bill Regularity | 15% | Whether bills are paid consistently |
+| Category Diversity | 15% | Spread of spending across categories |
+
+Score ranges:
+
+- 80 to 100 — Financially Healthy
+- 55 to 79 — Moderate Risk
+- 40 to 54 — Financially Unstable
+- 0 to 39 — Critical
+
+---
+
+## Days to Zero Predictor
+
+Using actual daily spending data from parsed transactions, the engine calculates a daily burn rate and predicts the number of days before the current balance reaches zero. A volatility buffer is applied when spending is highly concentrated on specific days.
+
+---
+
+## Supported Banks
+
+- GTBank
+- Access Bank
+- First Bank
+- Zenith Bank
+- UBA
 
 ---
 
@@ -72,234 +97,86 @@ Supabase (PostgreSQL)
 finsight-ai/
 |
 |-- api/
-|   |-- __init__.py
-|   |-- main.py                  FastAPI app entry point
+|   |-- main.py                  # FastAPI app entry point
 |   |-- routes/
-|       |-- __init__.py
-|       |-- analyze.py           POST /api/analyze
-|       |-- score.py             POST /api/score
-|       |-- parse.py             POST /api/parse/sms, /api/parse/csv
-|       |-- health.py            GET  /health
+|       |-- analyze.py           # Master analysis endpoint
+|       |-- score.py             # Score endpoint
+|       |-- health.py            # Health check
+|       |-- parse.py             # SMS and CSV parsing routes
 |
 |-- services/
-|   |-- __init__.py
-|   |-- sms_parser.py            Nigerian bank SMS parser
-|   |-- csv_parser.py            CSV transaction parser
-|   |-- score_engine.py          Financial Health Score engine
-|   |-- ai_actions.py            AI-driven action generator
-|   |-- interswitch.py           Interswitch Sandbox API client
-|   |-- db.py                    Supabase database layer
-|   |-- demo_seeder.py           Sample data for testing
+|   |-- sms_parser.py            # Bank SMS parsing logic
+|   |-- score_engine.py          # Scoring, prediction, pattern detection
+|   |-- ai_actions.py            # AI recommendation engine
+|   |-- db.py                    # Supabase database layer
 |
-|-- frontend/
-|   |-- index.html               Landing page
-|   |-- dashboard.html           Main app dashboard
-|   |-- assets/
-|       |-- app.js
-|       |-- style.css
-|   |-- manifest.json            PWA manifest
-|   |-- sw.js                    Service worker (offline support)
-|
-|-- pdf_service/                 Deployed separately on Hugging Face
-|   |-- main.py                  PDF parser + /insights endpoint
-|   |-- requirements.txt
-|   |-- Dockerfile
-|
-|-- vercel.json
+|-- frontend/                    # Static HTML/CSS/JS frontend
+|-- vercel.json                  # Vercel deployment configuration
 |-- requirements.txt
-|-- .env.local                   Not committed
 ```
 
 ---
 
-## API Endpoints
+## Local Setup
 
-### Main Backend (Vercel)
+**Requirements:** Python 3.10+
 
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | /health | Health check |
-| POST | /api/analyze | Full analysis from SMS or CSV input |
-| POST | /api/score | Standalone score calculation |
-| POST | /api/parse/sms | Parse single Nigerian bank SMS |
-| POST | /api/parse/sms/batch | Parse multiple SMS messages |
-| POST | /api/parse/csv | Parse CSV bank statement |
-| POST | /api/savings/plan | Create savings plan via Interswitch |
-| POST | /api/savings/analyze | Analyze spending and recommend savings |
-| POST | /api/savings/bills/optimize | Bill optimization via Interswitch |
-| GET | /api/parse/banks | List supported banks |
-| GET | /api/parse/demo | Sample data for testing |
+```bash
+# Clone the repository
+git clone https://github.com/olatunjitobiloba/finsight-ai.git
+cd finsight-ai
 
-### PDF Parser Service (Hugging Face)
+# Create and activate virtual environment
+python -m venv venv
+source venv/bin/activate        # Windows: venv\Scripts\activate
 
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | /health | Health check |
-| POST | /api/parse/pdf | Upload and parse PDF directly |
-| POST | /parse-statement | Parse PDF from URL, save to Supabase |
-| GET | /transactions/{user_id} | Fetch saved transactions |
-| POST | /insights | AI-generated financial insights via Groq |
+# Install dependencies
+pip install -r requirements.txt
 
----
+# Set environment variables
+cp .env.example .env
+# Fill in SUPABASE_URL and SUPABASE_KEY in .env
 
-## Supported Banks
+# Run the server
+uvicorn api.main:app --reload
+```
 
-| Bank | SMS Parsing | PDF Parsing |
-|---|---|---|
-| Access Bank | Yes | Yes (precision parser) |
-| UBA | Yes | Yes (precision parser) |
-| GTBank | Yes | Config-based |
-| Zenith Bank | Yes | Config-based |
-| First Bank | Yes | Config-based |
-| Stanbic | No | Config-based |
-| Fidelity | No | Config-based |
-| Sterling | No | Config-based |
-| Polaris | No | Config-based |
-| FCMB | No | Config-based |
-| Wema | No | Config-based |
-| Ecobank | No | Config-based |
-
----
-
-## Financial Health Score
-
-The score is computed across 5 pillars:
-
-| Pillar | Weight | What It Measures |
-|---|---|---|
-| Income Stability | 25 | Consistency and presence of income |
-| Spending Control | 25 | Ratio of expenses to income |
-| Savings Behavior | 20 | Whether savings transactions exist |
-| Bill Regularity | 15 | Recurring bill payment consistency |
-| Category Diversity | 15 | Spread of spending across categories |
-
-Score grades:
-
-- 80-100: Excellent (A)
-- 65-79: Good (B)
-- 50-64: Moderate Risk (C)
-- 35-49: High Risk (D)
-- 0-34: Critical (F)
-
----
-
-## Interswitch Integration
-
-FinSight AI integrates with the Interswitch Sandbox API for:
-
-- Savings simulation via Quickteller
-- Bill payment optimization (electricity, water, DSTV, airtime, data)
-- Transaction verification
-
-All payment actions in the current build use the Interswitch Sandbox environment. No real money is moved.
+Server runs at `http://localhost:8000`
 
 ---
 
 ## Environment Variables
 
-Create a `.env.local` file in the project root:
-
-```
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_KEY=your-anon-key
-INTERSWITCH_CLIENT_ID=your-client-id
-INTERSWITCH_CLIENT_SECRET=your-client-secret
-GROQ_API_KEY=your-groq-key
-PDF_SERVICE_URL=https://margaret-06-finsight-pdf.hf.space
-```
-
-For the PDF service (Hugging Face Secrets):
-
-```
-SUPABASE_URL
-SUPABASE_SERVICE_KEY
-GROQ_API_KEY
-```
-
----
-
-## Local Development
-
-```bash
-# Clone the repo
-git clone https://github.com/olatunjitobiloba/finsight-ai.git
-cd finsight-ai
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Run the backend locally
-uvicorn api.main:app --reload --port 8000
-
-# Visit API docs
-http://localhost:8000/docs
-```
-
----
-
-## Database Schema
-
-Run in Supabase SQL Editor:
-
-```sql
-CREATE TABLE transactions (
-  id               UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id          TEXT NOT NULL,
-  amount           NUMERIC NOT NULL,
-  type             TEXT NOT NULL,
-  category         TEXT DEFAULT 'Uncategorized',
-  description      TEXT,
-  transaction_date DATE,
-  source           TEXT DEFAULT 'sms',
-  bank             TEXT,
-  balance          NUMERIC,
-  hash             VARCHAR(64) UNIQUE,
-  created_at       TIMESTAMP DEFAULT NOW()
-);
-
-CREATE TABLE user_bank_profiles (
-  id             UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id        TEXT NOT NULL UNIQUE,
-  bank_name      TEXT,
-  account_number TEXT,
-  created_at     TIMESTAMP DEFAULT NOW()
-);
-
-CREATE TABLE bill_setups (
-  id           UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id      TEXT NOT NULL,
-  bill_type    TEXT NOT NULL,
-  biller_code  TEXT NOT NULL,
-  customer_id  TEXT NOT NULL,
-  amount       NUMERIC,
-  auto_pay     BOOLEAN DEFAULT FALSE,
-  created_at   TIMESTAMP DEFAULT NOW()
-);
-```
-
----
-
-## Team
-
-| Name | Role |
+| Variable | Description |
 |---|---|
-| Olatunji Franklin (Toby) | ML Engineer — Score engine, AI actions, frontend, deployment |
-| Margaret Adeniran | Backend Engineer — PDF parser, Supabase integration, Hugging Face deployment |
-| Pogbe | Systems Engineer — Interswitch integration, SMS parser, API gateway |
-
-Covenant University, Computer Engineering — BeyondTheRails Hackathon 2026
+| `SUPABASE_URL` | Your Supabase project URL |
+| `SUPABASE_KEY` | Your Supabase service role key (backend only) |
 
 ---
 
-## Tech Stack
+## Deployment
 
-| Layer | Technology |
-|---|---|
-| Backend | FastAPI (Python) |
-| Database | Supabase (PostgreSQL) |
-| AI Insights | Groq (llama-3.3-70b-versatile) |
-| PDF Parsing | pdfplumber, pikepdf |
-| Payments | Interswitch Sandbox API |
-| Frontend Hosting | Vercel |
-| PDF Service Hosting | Hugging Face Spaces (Docker) |
-| PWA | HTML, CSS, Vanilla JS, Service Worker |
+The project is deployed on Vercel. The `vercel.json` configuration routes all `/api/*` requests to the FastAPI backend and all other requests to the static frontend.
+
+To deploy your own instance:
+
+1. Fork the repository
+2. Connect to Vercel
+3. Add `SUPABASE_URL` and `SUPABASE_KEY` as environment variables in Vercel project settings
+4. Push to the `main` branch to trigger a production deployment
+
+---
+
+## Contributors
+
+| Name | GitHub | Role |
+|---|---|---|
+| Olatunjitobi Loba | [@olatunjitobiloba](https://github.com/olatunjitobiloba) | Project Lead, Score Engine, Architecture |
+| Margaret | [@madeniran2300324-beep](https://github.com/madeniran2300324-beep) | Analysis Endpoint, Core Backend Logic |
+| Emmanuel Pogbe | [@emmanuel-pogbe](https://github.com/emmanuel-pogbe) | Backend Contributions |
+
+---
+
+## License
+
+MIT License. See `LICENSE` for details.

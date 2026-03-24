@@ -5,15 +5,10 @@ Parse API Routes - SMS and CSV parsing endpoints
 from fastapi import APIRouter, HTTPException, Form, File, UploadFile
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
-import sys
-import os
 
-# Add the services directory to Python path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'services'))
-
-from sms_parser import parse_sms, parse_multiple_sms
-from csv_parser import parse_csv
-from interswitch import simulate_saving, simulate_savings, simulate_bill_optimization
+from services.sms_parser import parse_sms, parse_multiple_sms
+from services.csv_parser import parse_csv
+from services.interswitch import simulate_saving, simulate_savings, simulate_bill_optimization
 
 router = APIRouter(prefix="/api", tags=["parse"])
 
@@ -334,7 +329,7 @@ async def get_demo_data():
     Returns:
         Sample SMS messages and CSV data
     """
-    from demo_seeder import SAMPLE_SMS_MESSAGES, SAMPLE_CSV_DATA
+    from services.demo_seeder import SAMPLE_SMS_MESSAGES, SAMPLE_CSV_DATA
     
     return {
         "success": True,

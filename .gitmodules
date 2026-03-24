@@ -1,0 +1,3 @@
+[submodule "finsight-pdf"]
+	path = finsight-pdf
+	url = https://huggingface.co/spaces/Margaret-06/finsight-pdf

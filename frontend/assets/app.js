@@ -276,11 +276,12 @@ async function analyzePDF() {
       throw new Error("PDF parsing returned invalid data");
     }
 
-    const analyzeResponse = await fetchJson(`${API_BASE}/api/analyze`, {
+    // Send parsed transactions directly to analysis endpoint (skip SMS conversion)
+    const analyzeResponse = await fetchJson(`${API_BASE}/api/analyze/transactions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        sms_text: buildSMSFromTransactions(parseResult.parsed)
+        transactions: parseResult.parsed
       })
     });
 

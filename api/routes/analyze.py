@@ -17,7 +17,7 @@
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 # Internal services
 from services.sms_parser   import parse_multiple_sms
@@ -37,6 +37,13 @@ class AnalyzeRequest(BaseModel):
     sms_text:   str
     user_id:    Optional[str] = "demo-user"
     balance:    Optional[float] = None   # current balance if known
+
+
+class AnalyzeTransactionsRequest(BaseModel):
+    """Accept pre-parsed transactions directly (e.g., from PDF parser)"""
+    transactions: List[Dict[str, Any]]
+    user_id:    Optional[str] = "demo-user"
+    balance:    Optional[float] = None
 
 
 # ── RESPONSE STRUCTURE ─────────────────────────────
@@ -167,6 +174,114 @@ async def analyze(request: AnalyzeRequest):
             "parse_rate": parse_result.get("success_rate", 0)
         },
 
+        # Transaction list (for frontend timeline)
+        "transactions": transactions
+    }
+
+
+# ── DIRECT TRANSACTIONS ANALYSIS ENDPOINT ─────────
+# This endpoint accepts pre-parsed transactions (e.g., from PDF parser)
+# and skips the SMS parsing step entirely.
+@router.post("/api/analyze/transactions")
+async def analyze_transactions(request: AnalyzeTransactionsRequest):
+    """
+    Analyze pre-parsed transactions directly.
+    
+    Used when:
+    - PDF parser already has extracted transactions
+    - CSV parser already has extracted transactions
+    - Need to skip SMS parsing step
+    
+    Args:
+        transactions: List of transaction dicts with amount, date, type, description, etc.
+        user_id: User identifier
+        balance: Current balance (optional)
+        
+    Returns:
+        Full financial analysis (score, days-to-zero, patterns, etc.)
+    """
+    
+    # ── 1. Validate input
+    transactions = request.transactions or []
+    if not transactions or not isinstance(transactions, list):
+        raise HTTPException(
+            status_code=400,
+            detail="Transactions must be a non-empty list"
+        )
+    
+    # ── 2. Save to Supabase (non-blocking)
+    saved_count = 0
+    try:
+        for txn in transactions:
+            result = save_transaction(request.user_id, txn)
+            if result:
+                saved_count += 1
+    except Exception:
+        # DB failure should NOT break the analysis
+        pass
+    
+    # ── 3. Get balance from transactions if not provided
+    balance = request.balance
+    if balance is None:
+        for txn in reversed(transactions):
+            if txn.get("balance") and txn["balance"] > 0:
+                balance = txn["balance"]
+                break
+    
+    # ── 4. Run score engine
+    try:
+        score_result = calculate_score(transactions)
+    except Exception as e:
+        score_result = {
+            "score": 0,
+            "label": "Error",
+            "color": "gray",
+            "message": "Score calculation failed.",
+            "pillars": {},
+            "summary": {}
+        }
+    
+    # ── 5. Run days-to-zero predictor
+    try:
+        days_result = days_to_zero(transactions, current_balance=balance)
+    except Exception as e:
+        days_result = {
+            "days_remaining": None,
+            "daily_burn_rate": None,
+            "urgency": "unknown",
+            "message": "Prediction unavailable."
+        }
+    
+    # ── 6. Run behavior pattern detection
+    try:
+        pattern_result = detect_patterns(transactions)
+    except Exception as e:
+        pattern_result = {"patterns": [], "count": 0, "top_pattern": None}
+    
+    # ── 7. Generate AI actions
+    try:
+        actions = generate_actions(score_result, days_result, pattern_result)
+    except Exception as e:
+        actions = []
+    
+    # ── 8. Build and return full response
+    return {
+        "success": True,
+        "user_id": request.user_id,
+        
+        # Core intelligence
+        "score":       score_result,
+        "days_to_zero": days_result,
+        "patterns":    pattern_result,
+        "actions":     actions,
+        
+        # Parse metadata
+        "parse_summary": {
+            "source": "direct",
+            "transactions_received": len(transactions),
+            "transactions_saved":  saved_count
+        },
+        
         # Transaction list (for frontend timeline)
         "transactions": transactions
     }

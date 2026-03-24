@@ -761,6 +761,22 @@ def _parse_pdf_bytes(pdf_bytes: bytes, password: str = "", filename: str = "file
 # -------------------------------------------------
 # SUPABASE SAVE HELPER
 # -------------------------------------------------
+def _generate_transaction_hash(user_id: str, transaction: dict) -> str:
+    """
+    Generate a unique hash for deduplication.
+    Includes balance to differentiate transactions with same amount/type/date.
+    """
+    raw = (
+        f"{user_id}|"
+        f"{transaction['transaction_date']}|"
+        f"{transaction['amount']}|"
+        f"{transaction['type']}|"
+        f"{str(transaction.get('balance', ''))[:10]}|"
+        f"{transaction['description'][:30]}"
+    )
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
 def _save_to_supabase(user_id: str, transactions: list) -> dict:
     saved = 0
     errors = []
@@ -770,19 +786,9 @@ def _save_to_supabase(user_id: str, transactions: list) -> dict:
 
     for txn in transactions:
         try:
-            txn_date = str(txn.get("transaction_date", ""))
-            txn_amount = txn.get("amount", 0)
-            txn_type = txn.get("type", "")
-            txn_desc = str(txn.get("description", ""))
-            txn_desc_prefix = txn_desc[:50]
+            txn_hash = _generate_transaction_hash(user_id, txn)
 
-            # Build a stable, user-scoped transaction fingerprint.
-            raw = (
-                f"{user_id}|{txn_date}|{txn_amount}|{txn_type}|{txn_desc_prefix}"
-            )
-            txn_hash = hashlib.sha256(raw.encode()).hexdigest()
-
-            # Fast path: skip if an exact hash already exists.
+            # Check 1: by hash (fast path — catches new duplicates and backfilled rows)
             existing = (
                 supabase.table("transactions")
                 .select("id")
@@ -793,37 +799,35 @@ def _save_to_supabase(user_id: str, transactions: list) -> dict:
             if existing.data:
                 continue
 
-            # Legacy fallback: match by transaction content for rows created before hash existed.
-            content_matches = (
+            # Check 2: by content + balance (catches old null-hash rows)
+            content_check = (
                 supabase.table("transactions")
-                .select("id,description,hash")
+                .select("id")
                 .eq("user_id", user_id)
-                .eq("transaction_date", txn_date)
-                .eq("amount", txn_amount)
-                .eq("type", txn_type)
-                .limit(20)
+                .eq("transaction_date", str(txn["transaction_date"]))
+                .eq("amount", txn["amount"])
+                .eq("type", txn["type"])
+                .eq("balance", txn.get("balance"))
+                .limit(1)
                 .execute()
             )
 
-            matched_row = None
-            for row in (content_matches.data or []):
-                row_desc_prefix = str(row.get("description") or "")[:50]
-                if row_desc_prefix == txn_desc_prefix:
-                    matched_row = row
-                    break
-
-            if matched_row:
-                if not matched_row.get("hash"):
-                    supabase.table("transactions").update({"hash": txn_hash}).eq("id", matched_row["id"]).execute()
+            if content_check.data:
+                # Backfill the hash on the existing row
+                supabase.table("transactions") \
+                    .update({"hash": txn_hash}) \
+                    .eq("id", content_check.data[0]["id"]) \
+                    .execute()
                 continue
 
+            # New transaction — save it
             row = {
                 "user_id": user_id,
-                "amount": txn_amount,
-                "type": txn_type,
+                "amount": txn.get("amount"),
+                "type": txn.get("type"),
                 "description": txn.get("description"),
                 "category": txn.get("category"),
-                "transaction_date": txn_date,
+                "transaction_date": str(txn.get("transaction_date")),
                 "balance": txn.get("balance"),
                 "bank": txn.get("bank"),
                 "source": "pdf",

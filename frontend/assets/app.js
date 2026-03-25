@@ -288,11 +288,11 @@ async function analyzeCSV() {
       throw new Error(parseResult?.error || "CSV parsing returned no transactions");
     }
 
-    const analyzeResponse = await fetchJson(`${API_BASE}/api/analyze`, {
+    const analyzeResponse = await fetchJson(`${API_BASE}/api/analyze/transactions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        sms_text: buildSMSFromTransactions(parsedTransactions)
+        transactions: parsedTransactions
       })
     });
 
@@ -319,7 +319,7 @@ async function analyzeCSV() {
 
 async function analyzePDF() {
   if (pdfDemoMode) {
-    await runAnalysis({ sms_text: DEMO_SMS }, "/api/analyze");
+    await analyzeDemoPDF();
     return;
   }
 
@@ -411,6 +411,10 @@ function loadDemoPDF() {
   getEl("pdfDropZone")?.classList.add("has-file");
   switchTab("pdf");
   showToast("Demo PDF loaded. Click Extract & Analyze.");
+}
+
+async function analyzeDemoPDF() {
+  await runAnalysis({ sms_text: DEMO_SMS, bank_type: "access" }, "/api/analyze");
 }
 
 function buildSMSFromTransactions(transactions) {

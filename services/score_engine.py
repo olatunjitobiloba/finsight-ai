@@ -493,6 +493,7 @@ def detect_patterns(transactions: list) -> dict:
     severity_order = {"high": 0, "medium": 1, "low": 2}
     pattern_priority = {
         "post_salary_spike": 0,
+        "post_salary_watch": 1,
         "weekend_overspend": 1,
         "food_overspend": 2,
         "late_month_desperation": 3,
@@ -534,10 +535,32 @@ def _detect_weekend_spending(debits: list) -> Optional[dict]:
     if not weekend_days or not weekday_days:
         return None
 
+    total_spending = weekend_total + weekday_total
+    active_spend_days = len(weekend_days) + len(weekday_days)
+    if active_spend_days == 0:
+        return None
+
+    avg_daily_spend = total_spending / active_spend_days
+
+    # Guardrail: avoid noisy alerts for very low spend users.
+    if total_spending < 60000 or avg_daily_spend < 5000:
+        return None
+
+    # Require a reasonable activity footprint so tiny samples do not overfit.
+    if len(weekend_days) < 2 or len(weekday_days) < 4:
+        return None
+
     weekend_avg = weekend_total / len(weekend_days)
     weekday_avg = weekday_total / len(weekday_days)
 
-    if weekend_avg > weekday_avg * 1.25:  # 25% more per active day
+    if weekday_avg <= 0:
+        return None
+
+    weekend_share = weekend_total / total_spending
+    avg_gap = weekend_avg - weekday_avg
+
+    # Stricter trigger: higher ratio + meaningful absolute difference + meaningful spend share.
+    if weekend_avg > weekday_avg * 1.4 and avg_gap >= 3000 and weekend_share >= 0.33:
         pct = round(((weekend_avg - weekday_avg) / weekday_avg) * 100)
         return {
             "id":       "weekend_overspend",
@@ -545,7 +568,7 @@ def _detect_weekend_spending(debits: list) -> Optional[dict]:
             "detail":   f"You spend {pct}% more on weekends than weekdays. "
                         f"Weekend avg: ₦{weekend_avg:,.0f} vs "
                         f"weekday avg: ₦{weekday_avg:,.0f}.",
-            "severity": "high" if pct >= 60 else "medium"
+            "severity": "high" if pct >= 85 else "medium"
         }
     return None
 
@@ -570,38 +593,104 @@ def _detect_post_salary_spike(transactions: list) -> Optional[dict]:
     if not credit_dates:
         return None
 
+    # Focus on discretionary behavior. Fixed bills/savings can cluster after salary
+    # and should not, by themselves, create a spike alert.
+    discretionary_debits = [
+        t for t in debits if not _is_essential_post_income_line(t)
+    ]
+
+    if not discretionary_debits:
+        return None
+
     spike_spending = 0.0
     spike_count = 0
-    for debit in debits:
+    spike_days = set()
+    spend_days = set()
+    for debit in discretionary_debits:
         try:
             debit_date = datetime.strptime(str(debit["transaction_date"]), "%Y-%m-%d").date()
         except (ValueError, KeyError):
             continue
+
+        spend_days.add(debit_date)
 
         # Count a debit once if it falls in any 7-day post-income window.
         in_window = any(cd <= debit_date <= (cd + timedelta(days=7)) for cd in credit_dates)
         if in_window:
             spike_spending += debit["amount"]
             spike_count += 1
+            spike_days.add(debit_date)
 
-    total_spending = sum(t["amount"] for t in debits)
+    total_spending = sum(t["amount"] for t in discretionary_debits)
 
     if total_spending == 0:
         return None
 
+    active_spend_days = len(spend_days)
+    if active_spend_days == 0:
+        return None
+
+    avg_daily_spend = total_spending / active_spend_days
+
+    # Guardrail: low-spend users should not be flagged by ratio-only effects.
+    if total_spending < 50000 or avg_daily_spend < 4500:
+        return None
+
     spike_ratio = spike_spending / total_spending
 
-    if spike_ratio > 0.35 and spike_count >= 3:
+    # Require enough post-income activity and absolute value, not just percentage.
+    if spike_count < 2 or len(spike_days) < 2:
+        return None
+
+    if spike_ratio > 0.65 and spike_spending >= 55000 and spike_count >= 3 and len(spike_days) >= 3:
         pct = round(spike_ratio * 100)
         return {
             "id":       "post_salary_spike",
             "title":    "Post-Income Spending Spike",
-            "detail":   f"You spend {pct}% of your money within 7 days "
+            "detail":   f"You spend {pct}% of your discretionary money within 7 days "
                         f"of receiving income. "
                         f"This leaves you vulnerable for the rest of the month.",
             "severity": "high"
         }
+
+    # Watch band: show context for moderate concentration without alarmist severity.
+    if spike_ratio > 0.5 and spike_spending >= 40000:
+        pct = round(spike_ratio * 100)
+        return {
+            "id":       "post_salary_watch",
+            "title":    "Post-Income Spend Watch",
+            "detail":   f"About {pct}% of your discretionary spend happens within 7 days "
+                        f"after income lands. Consider spreading non-essential purchases "
+                        f"across the month to keep more buffer.",
+            "severity": "low"
+        }
+
     return None
+
+
+def _is_essential_post_income_line(transaction: dict) -> bool:
+    desc = (transaction.get("description") or "").lower()
+    cat = (transaction.get("category") or "").lower()
+
+    if _is_fee_or_tax_line(desc):
+        return True
+
+    bill_keywords = [
+        "dstv", "gotv", "electricity", "water",
+        "rent", "airtime", "data", "subscription",
+        "ikedc", "ekedc", "aedc", "phcn",
+    ]
+    if any(kw in desc or kw in cat for kw in bill_keywords):
+        return True
+
+    savings_keywords = [
+        "savings", "piggyvest", "cowrywise",
+        "investment", "stash", "target", "save",
+    ]
+    if any(kw in desc or kw in cat for kw in savings_keywords):
+        return True
+
+    return False
 
 
 def _detect_food_addiction(debits: list) -> Optional[dict]:

@@ -136,20 +136,24 @@ def generate_genuine_actions(
             }
         })
 
-    # ── ACTION 4: Post-salary savings lock
-    post_salary = next(
+    # ── ACTION 4: Post-income behavior response
+    post_salary_spike = next(
         (p for p in patterns if p["id"] == "post_salary_spike"), None
     )
-    if post_salary:
+    post_salary_watch = next(
+        (p for p in patterns if p["id"] == "post_salary_watch"), None
+    )
+
+    if post_salary_spike:
         lock_amount = round(total_income * 0.30, 0)
         remaining   = round(total_income - lock_amount, 0)
-        spike_pct   = _extract_pct_from_detail(post_salary["detail"])
+        spike_pct   = _extract_pct_from_detail(post_salary_spike["detail"])
 
         actions.append({
             "title": f"Lock ₦{lock_amount:,.0f} the moment your salary arrives",
             "detail": (
-                f"You spent {spike_pct}% of your income "
-                f"within 3 days of receiving it. "
+                f"You spend {spike_pct}% of your discretionary money "
+                f"within 7 days of receiving income. "
                 f"On your next payday, immediately transfer ₦{lock_amount:,.0f} "
                 f"(30% of ₦{total_income:,.0f}) to a separate savings account. "
                 f"You will still have ₦{remaining:,.0f} to spend — "
@@ -161,6 +165,27 @@ def generate_genuine_actions(
                 "type":   "transfer",
                 "amount": lock_amount,
                 "label":  f"Transfer ₦{lock_amount:,.0f} to savings via Interswitch"
+            }
+        })
+    elif post_salary_watch:
+        watch_pct = _extract_pct_from_detail(post_salary_watch["detail"])
+        nudge_amount = round(total_income * 0.10, 0)
+
+        actions.append({
+            "title": f"Set aside ₦{nudge_amount:,.0f} in week one as a buffer",
+            "detail": (
+                f"About {watch_pct}% of your discretionary spend happens soon after payday. "
+                f"Try a lighter move: transfer ₦{nudge_amount:,.0f} "
+                f"(10% of ₦{total_income:,.0f}) in week one, "
+                f"then spread non-essential purchases across the month. "
+                f"This keeps flexibility while improving your month-end buffer."
+            ),
+            "impact": "low",
+            "type":   "savings_nudge",
+            "interswitch_action": {
+                "type":   "transfer",
+                "amount": nudge_amount,
+                "label":  f"Transfer ₦{nudge_amount:,.0f} as week-one buffer"
             }
         })
 

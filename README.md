@@ -9,7 +9,7 @@ Built for the **Interswitch x Enyata BeyondTheRails Hackathon 2026**.
 
 ---
 
-## TL;DR
+
 
 Paste your bank alerts. In seconds, FinSight tells you:
 

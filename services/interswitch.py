@@ -1,56 +1,54 @@
-# services/interswitch.py
-# FinSight AI - REAL Interswitch Sandbox Integration
-# Owner: Pogbe
-#
-# ALL calls go to Interswitch sandbox.
-# No fake references. No simulated responses.
-# Every reference number comes from Interswitch's system.
+"""Interswitch Marketplace Routing integration for FinSight AI."""
 
 import base64
-import hashlib
 import os
 import time
+import uuid
 from typing import Optional
 
 import httpx
 
-# -- CONFIG -------------------------------------------------
-CLIENT_ID = os.getenv("INTERSWITCH_CLIENT_ID", "")
-CLIENT_SECRET = os.getenv("INTERSWITCH_CLIENT_SECRET", "")
-BASE_URL = "https://sandbox.interswitchng.com"
-PASSPORT_URL = "https://sandbox.interswitchng.com/passport/oauth/token"
+TOKEN_URL = "https://qa.interswitchng.com/passport/oauth/token"
+BASE_URL = "https://api-marketplace-routing.k8.isw.la/marketplace-routing/api/v1"
 
-# -- TOKEN CACHE --------------------------------------------
 _token_cache = {"token": None, "expires_at": 0}
 
 
-def get_access_token() -> Optional[str]:
-    """Get OAuth2 token from Interswitch sandbox."""
+def get_access_token() -> str:
+    """Get and cache OAuth2 Bearer token for Interswitch APIs."""
+    client_id = os.getenv("INTERSWITCH_CLIENT_ID", "")
+    client_secret = os.getenv("INTERSWITCH_CLIENT_SECRET", "")
+
     if _token_cache["token"] and time.time() < _token_cache["expires_at"] - 60:
         return _token_cache["token"]
 
-    if not CLIENT_ID or not CLIENT_SECRET:
+    if not client_id or not client_secret:
         raise ValueError(
             "INTERSWITCH_CLIENT_ID and INTERSWITCH_CLIENT_SECRET "
-            "must be set in environment variables."
+            "must be set as environment variables."
         )
 
-    credentials = base64.b64encode(f"{CLIENT_ID}:{CLIENT_SECRET}".encode()).decode()
+    credentials = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
 
     try:
         response = httpx.post(
-            PASSPORT_URL,
+            TOKEN_URL,
             headers={
                 "Authorization": f"Basic {credentials}",
                 "Content-Type": "application/x-www-form-urlencoded",
             },
-            data={"grant_type": "client_credentials"},
+            data={
+                "grant_type": "client_credentials",
+                "scope": "profile",
+            },
             timeout=15,
         )
         response.raise_for_status()
         data = response.json()
+
         _token_cache["token"] = data["access_token"]
         _token_cache["expires_at"] = time.time() + data.get("expires_in", 3600)
+
         return _token_cache["token"]
     except httpx.HTTPStatusError as e:
         raise RuntimeError(f"Interswitch auth failed: {e.response.text}") from e
@@ -58,70 +56,125 @@ def get_access_token() -> Optional[str]:
         raise RuntimeError(f"Interswitch auth error: {str(e)}") from e
 
 
-def _headers() -> dict:
-    token = get_access_token()
-    return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+def _auth_headers() -> dict:
+    return {
+        "Authorization": f"Bearer {get_access_token()}",
+        "Content-Type": "application/json",
+    }
 
 
-def _generate_ref(prefix: str, user_id: str) -> str:
-    raw = f"{prefix}{user_id}{time.time()}"
-    return prefix + hashlib.md5(raw.encode()).hexdigest()[:10].upper()
+def _generate_reference(prefix: str = "FS") -> str:
+    return f"{prefix}{uuid.uuid4().hex[:12].upper()}"
+
+
+def get_billers() -> dict:
+    """Fetch all supported billers for VAS payments."""
+    try:
+        response = httpx.get(
+            f"{BASE_URL}/vas/billers",
+            headers=_auth_headers(),
+            timeout=15,
+        )
+        response.raise_for_status()
+        return {"status": "success", "data": response.json().get("data", [])}
+    except httpx.HTTPStatusError as e:
+        return {"status": "error", "message": e.response.text}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def get_payment_items(biller_id: int) -> dict:
+    """Fetch biller payment items and payment codes."""
+    try:
+        response = httpx.get(
+            f"{BASE_URL}/vas/billers/payment-item",
+            headers=_auth_headers(),
+            params={"biller-id": biller_id},
+            timeout=15,
+        )
+        response.raise_for_status()
+        return {"status": "success", "data": response.json().get("data", [])}
+    except httpx.HTTPStatusError as e:
+        return {"status": "error", "message": e.response.text}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def validate_customer(customer_id: str, payment_code: str) -> dict:
+    """Validate customer details before VAS payment."""
+    try:
+        response = httpx.post(
+            f"{BASE_URL}/vas/validate-customer",
+            headers=_auth_headers(),
+            json=[
+                {
+                    "customerId": customer_id,
+                    "paymentCode": payment_code,
+                }
+            ],
+            timeout=15,
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        if data.get("success"):
+            customer_data = data.get("data", [{}])[0]
+            return {
+                "status": "success",
+                "customer_name": customer_data.get("FullName", ""),
+                "amount": customer_data.get("Amount", 0),
+                "amount_type": customer_data.get("AmountTypeDescription", ""),
+                "surcharge": customer_data.get("Surcharge", 0),
+                "raw": customer_data,
+            }
+        return {"status": "error", "message": data.get("message", "Validation failed")}
+    except httpx.HTTPStatusError as e:
+        return {"status": "error", "message": e.response.text}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 def pay_bill(
-    biller_code: str,
     customer_id: str,
+    payment_code: str,
     amount_naira: float,
-    user_id: str,
-    payment_code: str = "",
+    reference: Optional[str] = None,
 ) -> dict:
-    """
-    Pay a bill via Interswitch Quickteller.
-
-    biller_code   - Interswitch biller code
-                    e.g. "BIL119" for IKEDC prepaid
-                         "BIL120" for EKEDC prepaid
-                         "BIL110" for DSTV
-                         "BIL112" for GOtv
-                         "BIL124" for MTN airtime
-                         "BIL125" for Airtel airtime
-                         "BIL127" for Glo airtime
-                         "BIL126" for 9mobile airtime
-
-    customer_id   - meter number / smartcard number / phone number
-    amount_naira  - amount in naira (we convert to kobo)
-    payment_code  - specific product code (e.g. data bundle code)
-    """
-    ref = _generate_ref("FS", user_id)
-    amount_kobo = int(amount_naira * 100)
-
-    payload = {
-        "terminalId": CLIENT_ID,
-        "paymentCode": payment_code or biller_code,
-        "customerId": customer_id,
-        "customerMobile": "",
-        "customerEmail": "",
-        "amount": amount_kobo,
-        "requestReference": ref,
-        "currency": "NGN",
-    }
+    """Execute VAS payment via Interswitch Marketplace Routing."""
+    ref = reference or _generate_reference("FS")
 
     try:
         response = httpx.post(
-            f"{BASE_URL}/quickteller/api/v5/payments",
-            headers=_headers(),
-            json=payload,
+            f"{BASE_URL}/vas/pay",
+            headers=_auth_headers(),
+            json={
+                "customerId": customer_id,
+                "amount": amount_naira,
+                "reference": ref,
+                "paymentCode": payment_code,
+            },
             timeout=20,
         )
         response.raise_for_status()
         data = response.json()
+
+        if data.get("success"):
+            result = data.get("data", {})
+            return {
+                "status": "success",
+                "reference": result.get("TransactionRef", ref),
+                "amount": amount_naira,
+                "response_code": result.get("ResponseCode", ""),
+                "description": result.get("ResponseDescription", "Payment successful"),
+                "grouping": result.get("ResponseCodeGrouping", ""),
+                "provider": "Interswitch",
+                "raw": result,
+            }
+
         return {
-            "status": "success",
-            "reference": data.get("transactionRef", ref),
-            "amount": amount_naira,
-            "message": data.get("responseDescription", "Payment successful"),
-            "provider": "Interswitch Quickteller",
-            "raw": data,
+            "status": "error",
+            "message": data.get("message", "Payment failed"),
+            "reference": ref,
         }
     except httpx.HTTPStatusError as e:
         return {
@@ -133,57 +186,212 @@ def pay_bill(
         return {"status": "error", "message": str(e), "reference": ref}
 
 
-def get_data_bundles(network: str) -> list:
-    """
-    Fetch available data bundles for a network.
-    network: "MTN" | "AIRTEL" | "GLO" | "9MOBILE"
-    """
-    network_biller = {
-        "MTN": "BIL130",
-        "AIRTEL": "BIL131",
-        "GLO": "BIL132",
-        "9MOBILE": "BIL133",
-    }
-    biller_code = network_biller.get(network.upper(), "BIL130")
-
+def check_transaction(request_reference: str) -> dict:
+    """Check transaction status by reference."""
     try:
         response = httpx.get(
-            f"{BASE_URL}/quickteller/api/v5/services/{biller_code}/bundles",
-            headers=_headers(),
+            f"{BASE_URL}/vas/transactions",
+            headers=_auth_headers(),
+            params={"request-reference": request_reference},
             timeout=15,
         )
         response.raise_for_status()
         data = response.json()
-        return data.get("bundles", [])
-    except Exception:
-        # Return common bundles as fallback.
-        return _fallback_bundles(network)
+
+        if data.get("success"):
+            result = data.get("data", {})
+            return {
+                "status": "success",
+                "tx_ref": result.get("TransactionRef", ""),
+                "tx_status": result.get("Status", ""),
+                "amount": result.get("Amount", 0),
+                "service": result.get("ServiceName", ""),
+                "paid_on": result.get("PaymentDate", ""),
+                "raw": result,
+            }
+
+        return {"status": "error", "message": data.get("message", "Query failed")}
+    except httpx.HTTPStatusError as e:
+        return {"status": "error", "message": e.response.text}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def get_bank_list() -> dict:
+    """Fetch list of banks and corresponding bank codes."""
+    try:
+        response = httpx.get(
+            f"{BASE_URL}/verify/identity/account-number/bank-list",
+            headers=_auth_headers(),
+            timeout=15,
+        )
+        response.raise_for_status()
+        data = response.json()
+        return {"status": "success", "banks": data.get("data", [])}
+    except httpx.HTTPStatusError as e:
+        return {"status": "error", "message": e.response.text}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def verify_bank_account(account_number: str, bank_code: str) -> dict:
+    """Resolve account name from account number and bank code."""
+    try:
+        response = httpx.post(
+            f"{BASE_URL}/verify/identity/account-number/resolve",
+            headers=_auth_headers(),
+            json={
+                "accountNumber": account_number,
+                "bankCode": bank_code,
+            },
+            timeout=15,
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        if data.get("success"):
+            result = data.get("data", {})
+            return {
+                "status": "success",
+                "account_name": result.get("accountName", ""),
+                "account_no": account_number,
+                "bank_code": bank_code,
+                "raw": result,
+            }
+
+        return {"status": "error", "message": data.get("message", "Verification failed")}
+    except httpx.HTTPStatusError as e:
+        return {"status": "error", "message": e.response.text}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def generate_otp(token_id: str) -> dict:
+    """Generate Safetoken OTP for transaction confirmation."""
+    try:
+        response = httpx.post(
+            f"{BASE_URL}/soft-token/generate",
+            headers=_auth_headers(),
+            json={"tokenId": token_id},
+            timeout=15,
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        if data.get("success"):
+            result = data.get("data", {})
+            return {
+                "status": "success",
+                "otp": result.get("otp", ""),
+                "expiry": result.get("expiry", ""),
+                "correlation_id": result.get("correlationId", ""),
+                "token_id": token_id,
+            }
+
+        return {"status": "error", "message": data.get("message", "OTP generation failed")}
+    except httpx.HTTPStatusError as e:
+        return {"status": "error", "message": e.response.text}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def verify_otp(token_id: str, otp: str) -> dict:
+    """Verify Safetoken OTP and return authentication token when valid."""
+    try:
+        response = httpx.post(
+            f"{BASE_URL}/soft-token/verify",
+            headers=_auth_headers(),
+            json={
+                "tokenId": token_id,
+                "otp": otp,
+            },
+            timeout=15,
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        if data.get("success"):
+            result = data.get("data", {})
+            verified = result.get("transactionStatus", "N") == "Y"
+            return {
+                "status": "success" if verified else "failed",
+                "verified": verified,
+                "auth_token": result.get("authenticationToken", ""),
+                "raw": result,
+            }
+
+        return {"status": "error", "message": data.get("message", "OTP verification failed")}
+    except httpx.HTTPStatusError as e:
+        return {"status": "error", "message": e.response.text}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def get_biller_info(biller_code: str) -> dict:
+    """
+    Backward-compatible helper.
+    Prefer get_billers() and get_payment_items() with biller-id.
+    """
+    billers = get_billers()
+    if billers.get("status") != "success":
+        return billers
+
+    match = None
+    needle = (biller_code or "").strip().lower()
+    for biller in billers.get("data", []):
+        name = str(biller.get("name") or biller.get("billerName") or "").lower()
+        code = str(biller.get("code") or biller.get("billerCode") or "").lower()
+        if needle and (needle == code or needle in name):
+            match = biller
+            break
+
+    if not match:
+        return {
+            "status": "error",
+            "message": "Biller not found. Use get_billers() to inspect available billers.",
+        }
+    return {"status": "success", "data": match}
+
+
+def get_data_bundles(network: str) -> list:
+    """
+    Backward-compatible bundle lookup for legacy callers.
+    Uses billers/payment-items where possible, otherwise returns static fallback bundles.
+    """
+    network_name = (network or "").strip().lower()
+    billers = get_billers()
+    if billers.get("status") == "success":
+        for biller in billers.get("data", []):
+            name = str(biller.get("name") or biller.get("billerName") or "").lower()
+            if network_name and network_name in name:
+                biller_id = biller.get("id") or biller.get("billerId")
+                if biller_id is not None:
+                    items = get_payment_items(int(biller_id))
+                    if items.get("status") == "success":
+                        return items.get("data", [])
+    return _fallback_bundles(network)
 
 
 def _fallback_bundles(network: str) -> list:
-    """Fallback bundle list if API call fails."""
     bundles = {
-        "MTN": [
+        "mtn": [
             {"code": "MTN1GB", "name": "1GB - 30 days", "price": 300},
             {"code": "MTN2GB", "name": "2GB - 30 days", "price": 500},
-            {"code": "MTN5GB", "name": "5GB - 30 days", "price": 1000},
-            {"code": "MTN10GB", "name": "10GB - 30 days", "price": 2000},
         ],
-        "AIRTEL": [
+        "airtel": [
             {"code": "AIR1GB", "name": "1.5GB - 30 days", "price": 300},
-            {"code": "AIR2GB", "name": "3GB - 30 days", "price": 500},
-            {"code": "AIR5GB", "name": "6GB - 30 days", "price": 1000},
+            {"code": "AIR3GB", "name": "3GB - 30 days", "price": 500},
         ],
-        "GLO": [
+        "glo": [
             {"code": "GLO2GB", "name": "2.5GB - 30 days", "price": 300},
             {"code": "GLO5GB", "name": "5GB - 30 days", "price": 500},
         ],
-        "9MOBILE": [
+        "9mobile": [
             {"code": "9M1GB", "name": "1GB - 30 days", "price": 300},
             {"code": "9M2GB", "name": "2GB - 30 days", "price": 500},
         ],
     }
-    return bundles.get(network.upper(), [])
+    return bundles.get((network or "").strip().lower(), [])
 
 
 def bank_transfer(
@@ -194,92 +402,14 @@ def bank_transfer(
     user_id: str,
 ) -> dict:
     """
-    Transfer money to a bank account via Interswitch.
-    Used for savings transfers (user provides their savings account).
+    Backward-compatible placeholder for legacy integration.
+    Marketplace Routing endpoints in this module focus on VAS and verification.
     """
-    ref = _generate_ref("TF", user_id)
-    amount_kobo = int(amount_naira * 100)
-
-    payload = {
-        "mac": _generate_mac(ref, amount_kobo),
-        "beneficiaryAccount": destination_account,
-        "beneficiaryBankCode": destination_bank_code,
-        "transferCode": ref,
-        "amount": amount_kobo,
-        "narration": narration,
-        "senderName": "FinSight AI User",
-        "currency": "NGN",
+    _ = (destination_account, destination_bank_code, amount_naira, narration, user_id)
+    return {
+        "status": "error",
+        "message": "bank_transfer is not configured for Marketplace Routing in this build.",
     }
-
-    try:
-        response = httpx.post(
-            f"{BASE_URL}/api/v1/funds-transfer",
-            headers=_headers(),
-            json=payload,
-            timeout=20,
-        )
-        response.raise_for_status()
-        data = response.json()
-        return {
-            "status": "success",
-            "reference": data.get("transferCode", ref),
-            "amount": amount_naira,
-            "message": f"NGN {amount_naira:,.0f} transferred to {destination_account}",
-            "provider": "Interswitch",
-            "raw": data,
-        }
-    except httpx.HTTPStatusError as e:
-        return {
-            "status": "error",
-            "message": f"Transfer failed: {e.response.text}",
-            "reference": ref,
-        }
-    except Exception as e:
-        return {"status": "error", "message": str(e), "reference": ref}
-
-
-def _generate_mac(ref: str, amount: int) -> str:
-    """Generate MAC for Interswitch transfer security."""
-    raw = f"{CLIENT_ID}{ref}{amount}{CLIENT_SECRET}"
-    return hashlib.sha512(raw.encode()).hexdigest()
-
-
-def get_biller_info(biller_code: str) -> dict:
-    """Validate a biller and get its details."""
-    try:
-        response = httpx.get(
-            f"{BASE_URL}/quickteller/api/v5/services/{biller_code}",
-            headers=_headers(),
-            timeout=10,
-        )
-        response.raise_for_status()
-        return response.json()
-    except Exception as e:
-        return {"error": str(e)}
-
-
-def validate_customer(biller_code: str, customer_id: str) -> dict:
-    """
-    Validate a customer ID (meter number, smartcard, phone)
-    before making payment.
-    """
-    try:
-        response = httpx.get(
-            f"{BASE_URL}/quickteller/api/v5/services/{biller_code}"
-            f"/customers/{customer_id}",
-            headers=_headers(),
-            timeout=10,
-        )
-        response.raise_for_status()
-        data = response.json()
-        return {
-            "valid": True,
-            "customer_name": data.get("customerName", ""),
-            "address": data.get("address", ""),
-            "raw": data,
-        }
-    except Exception:
-        return {"valid": False, "customer_name": "", "address": ""}
 
 
 def simulate_saving(amount: float, plan_type: str, user_profile: Optional[dict] = None) -> dict:

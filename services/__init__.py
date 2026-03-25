@@ -8,11 +8,18 @@ from .sms_parser import parse_sms, parse_multiple_sms
 from .csv_parser import parse_csv
 from .interswitch import (
     bank_transfer,
+    check_transaction,
+    generate_otp,
     get_access_token,
+    get_bank_list,
     get_biller_info,
+    get_billers,
     get_data_bundles,
+    get_payment_items,
     pay_bill,
     validate_customer,
+    verify_bank_account,
+    verify_otp,
 )
 
 __all__ = [
@@ -21,7 +28,14 @@ __all__ = [
     'parse_csv',
     'get_access_token',
     'pay_bill',
+    'get_billers',
+    'get_payment_items',
+    'check_transaction',
     'get_data_bundles',
+    'get_bank_list',
+    'verify_bank_account',
+    'generate_otp',
+    'verify_otp',
     'bank_transfer',
     'get_biller_info',
     'validate_customer'

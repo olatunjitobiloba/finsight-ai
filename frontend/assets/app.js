@@ -789,6 +789,142 @@ async function confirmExecutePayment() {
   }
 }
 
+// ===== Bank Verification Flow =====
+
+function setupBankVerifyModalBehavior() {
+  const modal = getEl("bankVerifyModal");
+  if (!modal) return;
+
+  modal.addEventListener("click", (event) => {
+    if (event.target === modal) {
+      closeBankVerifyFlow(false);
+    }
+  });
+}
+
+async function openBankVerifyFlow() {
+  const modal = getEl("bankVerifyModal");
+  if (!modal) return;
+
+  const dropdown = getEl("bankSelectDropdown");
+  const accountInput = getEl("bankAccountNumber");
+  const status = getEl("bankVerifyStatus");
+
+  if (status) {
+    status.className = "execute-status hidden";
+    status.innerHTML = "";
+  }
+
+  // Load banks
+  if (dropdown) {
+    dropdown.innerHTML = '<option value="">-- Loading banks --</option>';
+    try {
+      const response = await fetch(`${API_BASE}/api/bank-verify/banks`);
+      const data = await response.json();
+
+      if (response.ok && data?.status === "success" && data?.data) {
+        const banks = data.data;
+        dropdown.innerHTML = '<option value="">-- Select a bank --</option>';
+        banks.forEach((bank) => {
+          const opt = document.createElement("option");
+          opt.value = bank.code;
+          opt.textContent = `${bank.name} (${bank.code})`;
+          dropdown.appendChild(opt);
+        });
+      } else {
+        dropdown.innerHTML = '<option value="">Error loading banks</option>';
+      }
+    } catch (err) {
+      dropdown.innerHTML = '<option value="">Network error</option>';
+    }
+  }
+
+  if (accountInput) accountInput.value = "";
+  modal.classList.remove("hidden");
+}
+
+function closeBankVerifyFlow(clearFields = false) {
+  const modal = getEl("bankVerifyModal");
+  if (!modal) return;
+
+  modal.classList.add("hidden");
+
+  if (clearFields) {
+    const dropdown = getEl("bankSelectDropdown");
+    const account = getEl("bankAccountNumber");
+    if (dropdown) dropdown.value = "";
+    if (account) account.value = "";
+  }
+}
+
+function setBankVerifyStatus(kind, message, details = "") {
+  const status = getEl("bankVerifyStatus");
+  if (!status) return;
+
+  status.className = `execute-status ${kind}`;
+  status.classList.remove("hidden");
+  status.innerHTML = `
+    <div class="execute-status-title">${message}</div>
+    ${details ? `<div class="execute-status-detail">${details}</div>` : ""}
+  `;
+}
+
+function onBankSelected() {
+  const status = getEl("bankVerifyStatus");
+  if (status) {
+    status.className = "execute-status hidden";
+    status.innerHTML = "";
+  }
+}
+
+async function confirmBankVerify() {
+  const bankCode = String(getEl("bankSelectDropdown")?.value || "").trim();
+  const accountNumber = String(getEl("bankAccountNumber")?.value || "").trim();
+
+  if (!bankCode) {
+    showToast("Select a bank.", "error");
+    return;
+  }
+  if (!accountNumber || accountNumber.length < 10) {
+    showToast("Enter a valid account number (10+ digits).", "error");
+    return;
+  }
+
+  setBankVerifyStatus("loading", "Verifying account...", "Connecting to bank...");
+
+  try {
+    const response = await fetch(`${API_BASE}/api/bank-verify/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        account_number: accountNumber,
+        bank_code: bankCode,
+      }),
+    });
+
+    const payload = await response.json();
+
+    if (response.ok && payload?.status === "success") {
+      const name = payload?.account_name || "N/A";
+      setBankVerifyStatus(
+        "success",
+        "Account verified successfully.",
+        `Account Name: ${name} | Account No: ${accountNumber}`
+      );
+      showToast(`Account verified: ${name}`);
+      return;
+    }
+
+    const message = payload?.message || `Verification failed (${response.status})`;
+    setBankVerifyStatus("error", "Verification failed.", message);
+    showToast(message, "error");
+  } catch (err) {
+    const msg = String(err?.message || "Network error");
+    setBankVerifyStatus("error", "Network error.", msg);
+    showToast(msg, "error");
+  }
+}
+
 async function signInWithGoogle() {
   if (!window.supabase?.auth) {
     showToast("Supabase is not configured.", "error");
@@ -1339,6 +1475,7 @@ window.addEventListener("DOMContentLoaded", () => {
 
   setupAuthModalBehavior();
   setupExecuteModalBehavior();
+  setupBankVerifyModalBehavior();
 
   setupPageTransitions();
   setupBrandMarkTilt();
@@ -1363,6 +1500,10 @@ window.fixThis = fixThis;
 window.openExecuteFlow = openExecuteFlow;
 window.closeExecuteFlow = closeExecuteFlow;
 window.confirmExecutePayment = confirmExecutePayment;
+window.openBankVerifyFlow = openBankVerifyFlow;
+window.closeBankVerifyFlow = closeBankVerifyFlow;
+window.confirmBankVerify = confirmBankVerify;
+window.onBankSelected = onBankSelected;
 window.simulateSave = simulateSave;
 window.simulateBill = simulateBill;
 window.signInWithGoogle = signInWithGoogle;

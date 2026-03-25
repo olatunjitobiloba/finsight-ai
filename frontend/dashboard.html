@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f8f4ee"/>
   <title>FinSight AI - Financial Decision Engine</title>
   <link rel="manifest" href="./manifest.json" />
-  <link rel="stylesheet" href="./assets/style.css?v=20260325a" />
+  <link rel="stylesheet" href="./assets/style.css?v=20260325b" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,700&display=swap" rel="stylesheet" />
@@ -366,6 +366,9 @@
             <span class="interswitch-sub">Execute actions through payments</span>
           </div>
           <div class="interswitch-actions">
+            <button class="btn btn-interswitch" onclick="openBankVerifyFlow()" type="button">
+              <i class="fa-solid fa-building-columns" aria-hidden="true"></i> Verify Bank Account
+            </button>
             <button class="btn btn-interswitch" onclick="openExecuteFlow()" type="button">
               <i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Execute Fix Payment
             </button>
@@ -405,6 +408,32 @@
       </div>
 
       <div class="execute-status hidden" id="executeStatus"></div>
+    </div>
+  </div>
+
+  <!-- Bank Verification Modal -->
+  <div class="modal hidden" id="bankVerifyModal" role="dialog" aria-modal="true" aria-labelledby="bankVerifyModalTitle">
+    <div class="modal-box">
+      <div class="modal-title" id="bankVerifyModalTitle">Verify Bank Account</div>
+      <div class="modal-sub">Check account details before any transfers or payments.</div>
+
+      <label for="bankSelectDropdown" class="execute-label">Select Bank</label>
+      <select id="bankSelectDropdown" class="execute-input" onchange="onBankSelected()">
+        <option value="">-- Loading banks --</option>
+      </select>
+
+      <label for="bankAccountNumber" class="execute-label">Account Number</label>
+      <input id="bankAccountNumber" class="execute-input" type="text" placeholder="1234567890" autocomplete="off" />
+
+      <div class="execute-actions">
+        <button class="btn btn-primary" onclick="confirmBankVerify()" type="button">
+          <i class="fa-solid fa-check" aria-hidden="true"></i>
+          Verify Account
+        </button>
+        <button class="btn btn-ghost" onclick="closeBankVerifyFlow(true)" type="button">Cancel</button>
+      </div>
+
+      <div class="execute-status hidden" id="bankVerifyStatus"></div>
     </div>
   </div>
 
@@ -463,6 +492,6 @@
 
   <div class="toast hidden" id="toast"></div>
 
-  <script src="./assets/app.js?v=20260325a"></script>
+  <script src="./assets/app.js?v=20260325b"></script>
 </body>
 </html>

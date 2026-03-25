@@ -43,6 +43,59 @@ class TransactionStatusRequest(BaseModel):
     reference: str = Field(..., min_length=1, description="Transaction reference from pay response")
 
 
+def parse_payment_response(response: dict) -> dict:
+    """Normalize provider response into stable status/message/reference fields."""
+    if not isinstance(response, dict):
+        response = {}
+
+    code = (
+        response.get("responseCode")
+        or response.get("response_code")
+        or response.get("ResponseCode")
+        or response.get("code")
+        or ""
+    )
+
+    ref = (
+        response.get("transactionRef")
+        or response.get("reference")
+        or response.get("paymentRef")
+        or response.get("TransactionRef")
+        or response.get("requestRef")
+        or "N/A"
+    )
+
+    success_codes = {"00", "000", "0", "90000", "success", "approved"}
+    pending_codes = {"09", "099", "90009", "pending"}
+
+    code_lower = str(code).lower().strip()
+
+    if code_lower in success_codes:
+        status = "success"
+        message = "Payment successful"
+    elif code_lower in pending_codes:
+        status = "pending"
+        message = "Payment is being processed"
+    elif code == "":
+        status = "unknown"
+        message = "No response code returned by provider"
+    else:
+        status = "failed"
+        message = (
+            response.get("responseDescription")
+            or response.get("ResponseDescription")
+            or response.get("message")
+            or f"Payment failed (code: {code})"
+        )
+
+    return {
+        "status": status,
+        "message": message,
+        "reference": ref,
+        "raw_code": code,
+    }
+
+
 # Routes
 @router.get("/billers")
 async def get_billers():
@@ -190,23 +243,30 @@ async def pay_bill(req: PayBillRequest):
         
         status_code = result.get("status_code")
         body = result.get("body", {})
-        response_code = body.get("data", {}).get("ResponseCode")
-        reference = result.get("reference")  # Get from wrapper, not body
+        provider_data = body.get("data") if isinstance(body.get("data"), dict) else {}
+
+        parsed = parse_payment_response({
+            **provider_data,
+            "responseCode": provider_data.get("ResponseCode") or body.get("code") or body.get("responseCode"),
+            "responseDescription": provider_data.get("ResponseDescription") or body.get("message"),
+            "reference": result.get("reference"),
+        })
         
         if status_code == 200:
             return {
-                "status": "initiated",
-                "response_code": response_code,
-                "response_description": body.get("data", {}).get("ResponseCodeGrouping", ""),
-                "reference": reference,
-                "message": "Payment initiated. Check status with transaction endpoint.",
-                "data": body.get("data", {})
+                "status": parsed["status"],
+                "response_code": parsed["raw_code"],
+                "response_description": provider_data.get("ResponseCodeGrouping", ""),
+                "reference": parsed["reference"],
+                "message": parsed["message"],
+                "data": provider_data,
             }
         
         return {
             "status": "error",
-            "message": body.get("message", "Payment initiation failed"),
-            "response_code": response_code,
+            "message": parsed["message"],
+            "response_code": parsed["raw_code"],
+            "reference": parsed["reference"],
             "details": body
         }
     except Exception as e:

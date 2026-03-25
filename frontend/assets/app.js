@@ -1133,25 +1133,18 @@ function isSandboxPendingResponse(payload) {
 
 async function checkExecuteIntegrationStatus() {
   try {
-    const response = await fetch(`${API_BASE}/api/execute/status`);
+    const response = await fetch(`${API_BASE}/api/bills/billers`);
     const data = await response.json();
 
     const statusBefore = getEl("executeStatusBefore");
     if (!statusBefore) return;
 
-    if (data?.status === "ok") {
+    if (response.ok && data?.status === "success") {
       statusBefore.classList.add("hidden");
       return;
     }
 
-    const warnings = [];
-    if (!data?.checks?.client_id_present) warnings.push("Client ID not configured");
-    if (!data?.checks?.client_secret_present) warnings.push("Client Secret not configured");
-    if (!data?.checks?.terminal_id_present) warnings.push("Terminal ID not configured");
-
-    const message = data?.status === "sandbox_pending"
-      ? "Integration not ready: Awaiting Interswitch entitlement"
-      : `Integration not ready: ${warnings.join(", ") || "Unknown issue"}`;
+    const message = `Integration not ready: ${data?.message || `HTTP ${response.status}`}`;
 
     statusBefore.innerHTML = `
       <div style="color: #d4a574; padding: 12px; background: rgba(212, 165, 116, 0.1); border-left: 3px solid #d4a574; border-radius: 4px;">
@@ -1162,6 +1155,15 @@ async function checkExecuteIntegrationStatus() {
   } catch (err) {
     console.warn("Integration status check failed:", err);
   }
+}
+
+function isValidBillerName(name) {
+  if (!name) return false;
+  const normalized = String(name).trim();
+  if (!normalized) return false;
+  // Skip likely sandbox artifacts like "10159au8".
+  if (/^[0-9a-z]{6,}$/i.test(normalized) && !/\s/.test(normalized)) return false;
+  return true;
 }
 
 async function loadExecuteBillers() {
@@ -1191,13 +1193,19 @@ async function loadExecuteBillers() {
       if (category?.billers && Array.isArray(category.billers)) {
         category.billers.forEach((biller) => {
           const id = biller?.id;
-          const name = biller?.name || "Unknown";
-          if (id) {
-            html += `<option value="${escapeHtml(String(id))}"> ${escapeHtml(name)}</option>`;
+          const displayName = String(biller?.name || biller?.shortName || "").trim();
+          if (id && isValidBillerName(displayName)) {
+            html += `<option value="${escapeHtml(String(id))}">${escapeHtml(displayName)}</option>`;
           }
         });
       }
     });
+
+    if (html === '<option value="">-- Select a biller --</option>') {
+      dropdown.innerHTML = '<option value="">-- No valid billers available --</option>';
+      dropdown.disabled = true;
+      return;
+    }
 
     dropdown.innerHTML = html;
     dropdown.disabled = false;

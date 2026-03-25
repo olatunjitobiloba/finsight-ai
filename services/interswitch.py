@@ -137,8 +137,8 @@ def get_name_inquiry_token() -> str:
     return data["access_token"]
 
 
-def _auth_headers() -> dict:
-    token = get_access_token()
+def _auth_headers(force_refresh: bool = False) -> dict:
+    token = get_access_token(force_refresh=force_refresh)
     return {
         # Docs vary between Authorization and Authentication. Send both.
         "Authorization": f"Bearer {token}",
@@ -431,11 +431,14 @@ def check_transaction(request_reference: str) -> dict:
 def get_bank_list() -> dict:
     """Fetch list of banks and corresponding bank codes."""
     try:
-        response = httpx.get(
-            f"{QUICKTELLER_URL}/configuration/fundstransferbanks",
-            headers=_basic_headers(),
-            timeout=15,
-        )
+        # Bank list is served by Marketplace Verify API in current subscription.
+        url = f"{VERIFY_BASE_URL}/verify/identity/account-number/bank-list"
+        response = httpx.get(url, headers=_auth_headers(), timeout=15)
+
+        # Token may be stale; force refresh once on unauthorized.
+        if response.status_code == 401:
+            response = httpx.get(url, headers=_auth_headers(force_refresh=True), timeout=15)
+
         response.raise_for_status()
         data = response.json()
         if isinstance(data, list):

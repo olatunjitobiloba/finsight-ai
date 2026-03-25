@@ -151,7 +151,12 @@ async def analyze(request: AnalyzeRequest):
 
     # ── 10. Generate AI actions
     try:
-        actions = generate_actions(score_result, days_result, pattern_result)
+        actions = generate_actions(
+            score_result,
+            days_result,
+            pattern_result,
+            raw_transactions=transactions,
+        )
     except Exception as e:
         actions = []
 
@@ -260,7 +265,12 @@ async def analyze_transactions(request: AnalyzeTransactionsRequest):
     
     # ── 7. Generate AI actions
     try:
-        actions = generate_actions(score_result, days_result, pattern_result)
+        actions = generate_actions(
+            score_result,
+            days_result,
+            pattern_result,
+            raw_transactions=transactions,
+        )
     except Exception as e:
         actions = []
     
@@ -303,7 +313,10 @@ async def get_history(user_id: str):
         days_result    = days_to_zero(transactions)
         pattern_result = detect_patterns(transactions)
         actions        = generate_actions(
-            score_result, days_result, pattern_result
+            score_result,
+            days_result,
+            pattern_result,
+            raw_transactions=transactions,
         )
 
         return {

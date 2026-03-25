@@ -10,6 +10,7 @@
 from datetime import date, datetime, timedelta
 from collections import defaultdict
 from typing import Optional
+import re
 
 from services.ai_actions import generate_genuine_actions
 
@@ -139,7 +140,11 @@ def _score_spending_control(income: float, spending: float) -> float:
         return 5.0
     if ratio <= 1.0:
         return 2.0
-    return 0.0  # spending > income
+    if ratio <= 1.1:
+        return 1.0
+    if ratio <= 1.25:
+        return 0.5
+    return 0.0
 
 
 def _score_savings(transactions: list) -> float:
@@ -162,12 +167,14 @@ def _score_bills(debits: list) -> float:
     bill_keywords = [
         "dstv", "gotv", "electricity", "water",
         "rent", "airtime", "data", "subscription",
-        "bills", "ikedc", "ekedc"
+        "ikedc", "ekedc", "aedc", "phcn"
     ]
     bill_count = 0
     for t in debits:
         desc = (t.get("description") or "").lower()
         cat  = (t.get("category") or "").lower()
+        if _is_fee_or_tax_line(desc):
+            continue
         for kw in bill_keywords:
             if kw in desc or kw in cat:
                 bill_count += 1
@@ -183,9 +190,20 @@ def _score_bills(debits: list) -> float:
 
 def _score_diversity(debits: list) -> float:
     """15 pts max. Rewards spending across multiple categories."""
-    categories = set(
-        t.get("category", "Uncategorized") for t in debits
-    )
+    total_spending = sum(t.get("amount", 0) for t in debits)
+    if total_spending <= 0:
+        return 0.0
+
+    by_category = defaultdict(float)
+    for t in debits:
+        category = t.get("category", "Uncategorized")
+        by_category[category] += t.get("amount", 0)
+
+    # Ignore tiny/noise categories so score reflects meaningful behavior spread.
+    categories = {
+        cat for cat, amount in by_category.items()
+        if (amount / total_spending) >= 0.03
+    }
     count = len(categories)
     if count >= 5:
         return 15.0
@@ -472,25 +490,31 @@ def _detect_post_salary_spike(transactions: list) -> Optional[dict]:
     if not credits or not debits:
         return None
 
-    spike_spending = 0.0
-    spike_count    = 0
-
+    credit_dates = []
     for credit in credits:
         try:
-            credit_date = datetime.strptime(
-                str(credit["transaction_date"]), "%Y-%m-%d"
-            ).date()
-            window_end = credit_date + timedelta(days=7)
-
-            for debit in debits:
-                debit_date = datetime.strptime(
-                    str(debit["transaction_date"]), "%Y-%m-%d"
-                ).date()
-                if credit_date <= debit_date <= window_end:
-                    spike_spending += debit["amount"]
-                    spike_count    += 1
+            credit_dates.append(
+                datetime.strptime(str(credit["transaction_date"]), "%Y-%m-%d").date()
+            )
         except (ValueError, KeyError):
             continue
+
+    if not credit_dates:
+        return None
+
+    spike_spending = 0.0
+    spike_count = 0
+    for debit in debits:
+        try:
+            debit_date = datetime.strptime(str(debit["transaction_date"]), "%Y-%m-%d").date()
+        except (ValueError, KeyError):
+            continue
+
+        # Count a debit once if it falls in any 7-day post-income window.
+        in_window = any(cd <= debit_date <= (cd + timedelta(days=7)) for cd in credit_dates)
+        if in_window:
+            spike_spending += debit["amount"]
+            spike_count += 1
 
     total_spending = sum(t["amount"] for t in debits)
 
@@ -559,9 +583,16 @@ def _detect_recurring_merchant(debits: list) -> Optional[dict]:
     merchant_total = defaultdict(float)
 
     for t in debits:
-        desc = (t.get("description") or "unknown").lower().strip()
+        raw_desc = (t.get("description") or "unknown").lower().strip()
+        amount = float(t.get("amount", 0) or 0)
+
+        # Ignore VAT/commission/fee lines so we report true recurring spend.
+        if _is_fee_or_tax_line(raw_desc):
+            continue
+
+        desc = _normalize_merchant(raw_desc)
         merchant_count[desc] += 1
-        merchant_total[desc] += t["amount"]
+        merchant_total[desc] += amount
 
     # Find merchant visited 3+ times
     for merchant, count in merchant_count.items():
@@ -576,6 +607,20 @@ def _detect_recurring_merchant(debits: list) -> Optional[dict]:
                 "severity": "low"
             }
     return None
+
+
+def _is_fee_or_tax_line(description: str) -> bool:
+    desc = (description or "").lower()
+    fee_keywords = ["vat", "commission", "stamp duty", "sms alert fee", "charge"]
+    return any(keyword in desc for keyword in fee_keywords)
+
+
+def _normalize_merchant(description: str) -> str:
+    desc = (description or "unknown").lower().strip()
+    desc = re.sub(r"\s+", " ", desc)
+    desc = re.sub(r"^mobile trf to\s+", "", desc)
+    desc = re.sub(r"^transfer to\s+", "", desc)
+    return desc
 
 
 def _detect_late_month_spending(debits: list) -> Optional[dict]:

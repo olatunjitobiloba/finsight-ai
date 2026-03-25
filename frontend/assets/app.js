@@ -23,6 +23,32 @@ let csvContent = null;
 let pdfFile = null;
 let pdfDemoMode = false;
 let activeTab = "sms";
+let currentPillarExplanations = {};
+let currentPillarWhyLines = {};
+
+const PILLAR_KEYS = [
+  "income_stability",
+  "spending_control",
+  "savings_behavior",
+  "bill_regularity",
+  "category_diversity"
+];
+
+const PILLAR_LABELS = {
+  income_stability: "Income Stability",
+  spending_control: "Spending Control",
+  savings_behavior: "Savings Behavior",
+  bill_regularity: "Bill Regularity",
+  category_diversity: "Category Diversity"
+};
+
+const PILLAR_MAXES = {
+  income_stability: 25,
+  spending_control: 25,
+  savings_behavior: 20,
+  bill_regularity: 15,
+  category_diversity: 15
+};
 
 // Demo data
 const DEMO_SMS = `Access Bank: Your account credited with N150,000.00. Narration: Salary March 2026. Bal: N150,000.00
@@ -405,6 +431,15 @@ async function animateLoadingSteps() {
 
 function renderResults(data) {
   getEl("resultsPanel")?.classList.remove("hidden");
+  currentPillarWhyLines = buildPillarWhyLines(
+    data.score?.pillars || {},
+    data.transactions || []
+  );
+  currentPillarExplanations = buildPillarExplanations(
+    data.score?.pillars || {},
+    data.transactions || [],
+    currentPillarWhyLines
+  );
   renderScore(data.score || {});
   renderDaysToZero(data.days_to_zero || {});
   renderPatterns(data.patterns || {});
@@ -486,46 +521,26 @@ function renderPatterns(p) {
 function renderPillars(pillars) {
   if (!pillars) return;
 
-  const pillarKeys = [
-    "income_stability",
-    "spending_control",
-    "savings_behavior",
-    "bill_regularity",
-    "category_diversity"
-  ];
-
-  const labels = {
-    income_stability: "Income Stability",
-    spending_control: "Spending Control",
-    savings_behavior: "Savings Behavior",
-    bill_regularity: "Bill Regularity",
-    category_diversity: "Category Diversity"
-  };
-
-  const maxes = {
-    income_stability: 25,
-    spending_control: 25,
-    savings_behavior: 20,
-    bill_regularity: 15,
-    category_diversity: 15
-  };
-
   const pillarsList = getEl("pillarsList");
   if (!pillarsList) return;
 
-  pillarsList.innerHTML = pillarKeys
+  pillarsList.innerHTML = PILLAR_KEYS
     .filter((k) => Object.prototype.hasOwnProperty.call(pillars, k))
     .map((k) => {
       const v = pillars[k];
-    const max = maxes[k] || 25;
+    const max = PILLAR_MAXES[k] || 25;
     const pct = Math.max(0, Math.min(100, Math.round((Number(v || 0) / max) * 100)));
 
     return `
       <div class="pillar-item">
         <div class="pillar-top">
-          <span class="pillar-label">${labels[k] || k}</span>
+          <span class="pillar-label">${PILLAR_LABELS[k] || k}</span>
           <span class="pillar-value">${v}/${max}</span>
         </div>
+        <div class="pillar-why">${escapeHtml(currentPillarWhyLines[k] || "Threshold branch unavailable.")}</div>
+        <button class="pillar-explain-btn" type="button" onclick="openScoreDrawer('${k}')">
+          Show transactions used
+        </button>
         <div class="pillar-bar-bg">
           <div class="pillar-bar-fill" style="width:0" data-target="${pct}"></div>
         </div>
@@ -539,6 +554,330 @@ function renderPillars(pillars) {
       bar.style.width = `${target}%`;
     });
   }, 400);
+}
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function formatMoney(amount) {
+  return `\u20a6${Number(amount || 0).toLocaleString("en-NG", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  })}`;
+}
+
+function formatTxnForDrawer(txn) {
+  const date = escapeHtml(txn.transaction_date || "-");
+  const desc = escapeHtml(txn.description || "Transaction");
+  const cat = escapeHtml(txn.category || "Uncategorized");
+  const amount = formatMoney(txn.amount || 0);
+  const typeClass = txn.type === "credit" ? "credit" : "debit";
+  const typeLabel = txn.type === "credit" ? "Credit" : "Debit";
+
+  return `
+    <li class="drawer-txn-item">
+      <div class="drawer-txn-main">
+        <span class="drawer-txn-desc">${desc}</span>
+        <span class="drawer-txn-meta">${date} · ${cat} · ${typeLabel}</span>
+      </div>
+      <span class="drawer-txn-amount ${typeClass}">${amount}</span>
+    </li>
+  `;
+}
+
+function isFeeOrTaxLine(text) {
+  const content = String(text || "").toLowerCase();
+  return /\b(vat|stamp\s*duty|levy|charge|commission|fee|sms\s*alert\s*fee)\b/.test(content);
+}
+
+function isSavingsTxn(txn) {
+  const keywords = [
+    "savings", "piggyvest", "cowrywise",
+    "investment", "stash", "target", "save"
+  ];
+  const desc = String(txn.description || "").toLowerCase();
+  const cat = String(txn.category || "").toLowerCase();
+  return keywords.some((kw) => desc.includes(kw) || cat.includes(kw));
+}
+
+function isBillTxn(txn) {
+  const billKeywords = [
+    "dstv", "gotv", "electricity", "water",
+    "rent", "airtime", "data", "subscription",
+    "ikedc", "ekedc", "aedc", "phcn"
+  ];
+  const desc = String(txn.description || "").toLowerCase();
+  const cat = String(txn.category || "").toLowerCase();
+  if (isFeeOrTaxLine(desc)) {
+    return false;
+  }
+  return billKeywords.some((kw) => desc.includes(kw) || cat.includes(kw));
+}
+
+function findSavingsMatch(transactions) {
+  const keywords = [
+    "savings", "piggyvest", "cowrywise",
+    "investment", "stash", "target", "save"
+  ];
+
+  for (const txn of transactions) {
+    const desc = String(txn.description || "").toLowerCase();
+    const cat = String(txn.category || "").toLowerCase();
+    for (const kw of keywords) {
+      if (desc.includes(kw) || cat.includes(kw)) {
+        return { kw, txn };
+      }
+    }
+  }
+
+  return null;
+}
+
+function buildPillarWhyLines(_pillars, transactions) {
+  const credits = transactions.filter((t) => t.type === "credit");
+  const debits = transactions.filter((t) => t.type === "debit");
+  const incomeCount = credits.length;
+  const totalIncome = credits.reduce((sum, t) => sum + Number(t.amount || 0), 0);
+  const totalSpending = debits.reduce((sum, t) => sum + Number(t.amount || 0), 0);
+
+  let incomeWhy = "Branch: no credits detected, so 0/25.";
+  if (incomeCount >= 3) {
+    incomeWhy = `Branch: income count >= 3 (${incomeCount}), so 25/25.`;
+  } else if (incomeCount === 2) {
+    incomeWhy = "Branch: income count == 2, so 18/25.";
+  } else if (incomeCount === 1) {
+    incomeWhy = "Branch: single income entry, so 10/25.";
+  }
+
+  let spendingWhy;
+  if (totalIncome === 0) {
+    spendingWhy = "Branch: income == 0, so 0/25.";
+  } else {
+    const ratio = totalSpending / totalIncome;
+    const ratioText = `${(ratio * 100).toFixed(1)}%`;
+    if (ratio <= 0.35) {
+      spendingWhy = `Branch: ratio <= 35% (${ratioText}), so 25/25.`;
+    } else if (ratio <= 0.5) {
+      spendingWhy = `Branch: ratio <= 50% (${ratioText}), so 15/25.`;
+    } else if (ratio <= 0.7) {
+      spendingWhy = `Branch: ratio <= 70% (${ratioText}), so 10/25.`;
+    } else if (ratio <= 0.9) {
+      spendingWhy = `Branch: ratio <= 90% (${ratioText}), so 5/25.`;
+    } else if (ratio <= 1.0) {
+      spendingWhy = `Branch: ratio <= 100% (${ratioText}), so 2/25.`;
+    } else if (ratio <= 1.1) {
+      spendingWhy = `Branch: ratio <= 110% (${ratioText}), so 1/25.`;
+    } else if (ratio <= 1.25) {
+      spendingWhy = `Branch: ratio <= 125% (${ratioText}), so 0.5/25.`;
+    } else {
+      spendingWhy = `Branch: ratio > 125% (${ratioText}), so 0/25.`;
+    }
+  }
+
+  const savingsMatch = findSavingsMatch(transactions);
+  const savingsWhy = savingsMatch
+    ? `Branch: matched savings keyword '${savingsMatch.kw}', so 20/20.`
+    : "Branch: no savings keyword matched, so 0/20.";
+
+  const billTxns = debits.filter(isBillTxn);
+  const billCount = billTxns.length;
+  let billWhy = "Branch: bill count == 0, so 0/15.";
+  if (billCount >= 3) {
+    billWhy = `Branch: bill count >= 3 (${billCount}), so 15/15.`;
+  } else if (billCount === 2) {
+    billWhy = "Branch: bill count == 2, so 10/15.";
+  } else if (billCount === 1) {
+    billWhy = "Branch: bill count == 1, so 5/15.";
+  }
+
+  const spendingByCategory = new Map();
+  debits.forEach((txn) => {
+    const category = txn.category || "Uncategorized";
+    const current = spendingByCategory.get(category) || 0;
+    spendingByCategory.set(category, current + Number(txn.amount || 0));
+  });
+
+  let diversityWhy;
+  if (totalSpending <= 0) {
+    diversityWhy = "Branch: total debit spend <= 0, so 0/15.";
+  } else {
+    const qualifyingCount = Array.from(spendingByCategory.values())
+      .filter((amount) => (amount / totalSpending) >= 0.03)
+      .length;
+    if (qualifyingCount >= 5) {
+      diversityWhy = `Branch: qualifying categories >= 5 (${qualifyingCount}), so 15/15.`;
+    } else if (qualifyingCount >= 3) {
+      diversityWhy = `Branch: qualifying categories >= 3 (${qualifyingCount}), so 10/15.`;
+    } else if (qualifyingCount >= 2) {
+      diversityWhy = `Branch: qualifying categories >= 2 (${qualifyingCount}), so 5/15.`;
+    } else {
+      diversityWhy = `Branch: qualifying categories < 2 (${qualifyingCount}), so 0/15.`;
+    }
+  }
+
+  return {
+    income_stability: incomeWhy,
+    spending_control: spendingWhy,
+    savings_behavior: savingsWhy,
+    bill_regularity: billWhy,
+    category_diversity: diversityWhy
+  };
+}
+
+function buildPillarExplanations(pillars, transactions, pillarWhyLines = {}) {
+  const credits = transactions.filter((t) => t.type === "credit");
+  const debits = transactions.filter((t) => t.type === "debit");
+  const savingsTxns = transactions.filter(isSavingsTxn);
+  const billTxns = debits.filter(isBillTxn);
+  const totalIncome = credits.reduce((sum, t) => sum + Number(t.amount || 0), 0);
+  const totalSpending = debits.reduce((sum, t) => sum + Number(t.amount || 0), 0);
+
+  const spendingByCategory = new Map();
+  debits.forEach((txn) => {
+    const category = txn.category || "Uncategorized";
+    const current = spendingByCategory.get(category) || 0;
+    spendingByCategory.set(category, current + Number(txn.amount || 0));
+  });
+
+  const qualifyingCategories = new Set(
+    Array.from(spendingByCategory.entries())
+      .filter(([, amount]) => totalSpending > 0 && (amount / totalSpending) >= 0.03)
+      .map(([category]) => category)
+  );
+
+  const diversityTxns = debits.filter((txn) => qualifyingCategories.has(txn.category || "Uncategorized"));
+
+  const spendingRatio = totalIncome > 0 ? (totalSpending / totalIncome) : null;
+  const ratioText = spendingRatio === null
+    ? "No income transactions were found, so spending control is capped."
+    : `Spent ${(spendingRatio * 100).toFixed(1)}% of income (${formatMoney(totalSpending)} of ${formatMoney(totalIncome)}).`;
+
+  return {
+    income_stability: {
+      title: PILLAR_LABELS.income_stability,
+      score: Number(pillars.income_stability || 0),
+      max: PILLAR_MAXES.income_stability,
+      reason: pillarWhyLines.income_stability || "Threshold branch unavailable.",
+      sections: [
+        {
+          title: `Income entries (${credits.length})`,
+          txns: credits,
+          emptyText: "No credit transactions were found."
+        }
+      ]
+    },
+    spending_control: {
+      title: PILLAR_LABELS.spending_control,
+      score: Number(pillars.spending_control || 0),
+      max: PILLAR_MAXES.spending_control,
+      reason: pillarWhyLines.spending_control || ratioText,
+      sections: [
+        {
+          title: `Credits counted (${credits.length})`,
+          txns: credits,
+          emptyText: "No credits were counted."
+        },
+        {
+          title: `Debits counted (${debits.length})`,
+          txns: debits,
+          emptyText: "No debits were counted."
+        }
+      ]
+    },
+    savings_behavior: {
+      title: PILLAR_LABELS.savings_behavior,
+      score: Number(pillars.savings_behavior || 0),
+      max: PILLAR_MAXES.savings_behavior,
+      reason: pillarWhyLines.savings_behavior || "Threshold branch unavailable.",
+      sections: [
+        {
+          title: `Savings-related transactions (${savingsTxns.length})`,
+          txns: savingsTxns,
+          emptyText: "No savings-related transactions matched."
+        }
+      ]
+    },
+    bill_regularity: {
+      title: PILLAR_LABELS.bill_regularity,
+      score: Number(pillars.bill_regularity || 0),
+      max: PILLAR_MAXES.bill_regularity,
+      reason: pillarWhyLines.bill_regularity || "Threshold branch unavailable.",
+      sections: [
+        {
+          title: `Bill transactions counted (${billTxns.length})`,
+          txns: billTxns,
+          emptyText: "No qualifying bill transactions were found."
+        }
+      ]
+    },
+    category_diversity: {
+      title: PILLAR_LABELS.category_diversity,
+      score: Number(pillars.category_diversity || 0),
+      max: PILLAR_MAXES.category_diversity,
+      reason: pillarWhyLines.category_diversity || "Threshold branch unavailable.",
+      sections: [
+        {
+          title: `Transactions in qualifying categories (${diversityTxns.length})`,
+          txns: diversityTxns,
+          emptyText: "No categories met the 3% contribution threshold."
+        }
+      ]
+    }
+  };
+}
+
+function openScoreDrawer(pillarKey) {
+  const drawer = getEl("scoreDrawer");
+  const title = getEl("scoreDrawerTitle");
+  const body = getEl("scoreDrawerBody");
+  const explanation = currentPillarExplanations[pillarKey];
+  if (!drawer || !title || !body || !explanation) return;
+
+  title.textContent = `${explanation.title} (${explanation.score}/${explanation.max})`;
+
+  body.innerHTML = `
+    <p class="score-drawer-reason">${escapeHtml(explanation.reason)}</p>
+    ${explanation.sections.map((section) => `
+      <section class="drawer-section">
+        <h4 class="drawer-section-title">${escapeHtml(section.title)}</h4>
+        ${section.txns.length
+          ? `<ul class="drawer-txn-list">${section.txns.map(formatTxnForDrawer).join("")}</ul>`
+          : `<p class="drawer-empty">${escapeHtml(section.emptyText)}</p>`}
+      </section>
+    `).join("")}
+  `;
+
+  drawer.classList.remove("hidden");
+  drawer.setAttribute("aria-hidden", "false");
+  window.requestAnimationFrame(() => {
+    drawer.classList.add("is-open");
+  });
+}
+
+function closeScoreDrawer() {
+  const drawer = getEl("scoreDrawer");
+  if (!drawer) return;
+
+  drawer.classList.remove("is-open");
+  drawer.setAttribute("aria-hidden", "true");
+  window.setTimeout(() => {
+    drawer.classList.add("hidden");
+  }, 220);
+}
+
+function setupScoreDrawerBehavior() {
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    const drawer = getEl("scoreDrawer");
+    if (!drawer || drawer.classList.contains("hidden")) return;
+    closeScoreDrawer();
+  });
 }
 
 function renderTimeline(transactions) {
@@ -1249,6 +1588,7 @@ function showLoading(show) {
 }
 
 function hideResults() {
+  closeScoreDrawer();
   getEl("resultsPanel")?.classList.add("hidden");
   getEl("actionsCard")?.classList.add("hidden");
   getEl("interswitchResult")?.classList.add("hidden");
@@ -1476,6 +1816,7 @@ window.addEventListener("DOMContentLoaded", () => {
   setupAuthModalBehavior();
   setupExecuteModalBehavior();
   setupBankVerifyModalBehavior();
+  setupScoreDrawerBehavior();
 
   setupPageTransitions();
   setupBrandMarkTilt();
@@ -1511,3 +1852,5 @@ window.closeAuthModal = closeAuthModal;
 window.showHistoryModal = showHistoryModal;
 window.closeHistoryModal = closeHistoryModal;
 window.viewAnalysis = viewAnalysis;
+window.openScoreDrawer = openScoreDrawer;
+window.closeScoreDrawer = closeScoreDrawer;

@@ -172,22 +172,26 @@ def generate_genuine_actions(
         weekend_avg  = _get_weekend_avg(raw_transactions)
         weekday_avg  = _get_weekday_avg(raw_transactions)
         cap          = round(weekday_avg * 1.1, 0)
-        monthly_save = round((weekend_avg - cap) * 8, 0)  # ~8 weekend days/month
+        monthly_save = max(0, round((weekend_avg - cap) * 8, 0))  # ~8 weekend days/month
 
-        actions.append({
-            "title": f"Cap weekend spending at ₦{cap:,.0f} per day",
-            "detail": (
-                f"Your average weekend spend is ₦{weekend_avg:,.0f}/day "
-                f"vs ₦{weekday_avg:,.0f}/day on weekdays. "
-                f"If you cap weekends at ₦{cap:,.0f}/day — "
-                f"just 10% above your weekday average — "
-                f"you save approximately ₦{monthly_save:,.0f} per month. "
-                f"That is ₦{monthly_save * 12:,.0f} per year."
-            ),
-            "impact": "high" if monthly_save > 5000 else "medium",
-            "type":   "spending_cap",
-            "interswitch_action": None
-        })
+        if weekend_avg <= 0 or weekday_avg <= 0 or weekend_avg <= cap:
+            monthly_save = 0
+
+        if monthly_save > 0:
+            actions.append({
+                "title": f"Cap weekend spending at ₦{cap:,.0f} per day",
+                "detail": (
+                    f"Your average weekend spend is ₦{weekend_avg:,.0f}/day "
+                    f"vs ₦{weekday_avg:,.0f}/day on weekdays. "
+                    f"If you cap weekends at ₦{cap:,.0f}/day — "
+                    f"just 10% above your weekday average — "
+                    f"you save approximately ₦{monthly_save:,.0f} per month. "
+                    f"That is ₦{monthly_save * 12:,.0f} per year."
+                ),
+                "impact": "high" if monthly_save > 5000 else "medium",
+                "type":   "spending_cap",
+                "interswitch_action": None
+            })
 
     # ── ACTION 6: DSTV optimization
     dstv_spend = _count_category_transactions(
@@ -327,29 +331,31 @@ def _extract_pct_from_detail(detail: str) -> str:
 
 def _get_weekend_avg(transactions: list) -> float:
     from datetime import datetime
-    weekend_amounts = []
+    daily_totals = {}
     for t in transactions:
         if t.get("type") != "debit":
             continue
         try:
             d = datetime.strptime(str(t["transaction_date"]), "%Y-%m-%d")
             if d.weekday() >= 5:
-                weekend_amounts.append(t["amount"])
+                day_key = d.date().isoformat()
+                daily_totals[day_key] = daily_totals.get(day_key, 0) + float(t.get("amount", 0) or 0)
         except Exception:
             continue
-    return round(statistics.mean(weekend_amounts), 0) if weekend_amounts else 0
+    return round(statistics.mean(daily_totals.values()), 0) if daily_totals else 0
 
 
 def _get_weekday_avg(transactions: list) -> float:
     from datetime import datetime
-    weekday_amounts = []
+    daily_totals = {}
     for t in transactions:
         if t.get("type") != "debit":
             continue
         try:
             d = datetime.strptime(str(t["transaction_date"]), "%Y-%m-%d")
             if d.weekday() < 5:
-                weekday_amounts.append(t["amount"])
+                day_key = d.date().isoformat()
+                daily_totals[day_key] = daily_totals.get(day_key, 0) + float(t.get("amount", 0) or 0)
         except Exception:
             continue
-    return round(statistics.mean(weekday_amounts), 0) if weekday_amounts else 0
+    return round(statistics.mean(daily_totals.values()), 0) if daily_totals else 0

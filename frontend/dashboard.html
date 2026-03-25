@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f8f4ee"/>
   <title>FinSight AI - Financial Decision Engine</title>
   <link rel="manifest" href="./manifest.json" />
-  <link rel="stylesheet" href="./assets/style.css?v=20260325b" />
+  <link rel="stylesheet" href="./assets/style.css?v=20260325d" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,700&display=swap" rel="stylesheet" />
@@ -490,8 +490,24 @@
     </div>
   </div>
 
+  <div class="score-drawer hidden" id="scoreDrawer" aria-hidden="true">
+    <button class="score-drawer-backdrop" onclick="closeScoreDrawer()" aria-label="Close score explanation drawer" type="button"></button>
+    <aside class="score-drawer-panel" role="dialog" aria-modal="true" aria-labelledby="scoreDrawerTitle">
+      <div class="score-drawer-header">
+        <div>
+          <p class="score-drawer-kicker">Score explanation</p>
+          <h3 class="score-drawer-title" id="scoreDrawerTitle">Pillar details</h3>
+        </div>
+        <button class="score-drawer-close" onclick="closeScoreDrawer()" aria-label="Close" type="button">
+          <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+        </button>
+      </div>
+      <div class="score-drawer-body" id="scoreDrawerBody"></div>
+    </aside>
+  </div>
+
   <div class="toast hidden" id="toast"></div>
 
-  <script src="./assets/app.js?v=20260325b"></script>
+  <script src="./assets/app.js?v=20260325d"></script>
 </body>
 </html>

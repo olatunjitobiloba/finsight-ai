@@ -453,24 +453,29 @@ def get_bank_list() -> dict:
 
 
 def verify_bank_account(account_number: str, bank_code: str) -> dict:
-    """Resolve account name via Quickteller Name Inquiry endpoint."""
-    # Name inquiry in sandbox commonly expects Send Money terminal id.
-    terminal_id = os.getenv("INTERSWITCH_NAME_INQUIRY_TERMINAL_ID", "3DMO0001")
-
+    """Resolve account name via Marketplace verify identity endpoint."""
     try:
-        # Account inquiry requires header-based identity values.
-        token = get_name_inquiry_token()
-        response = httpx.get(
-            f"{QUICKTELLER_URL}/transactions/DoAccountNameInquiry",
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json",
-                "TerminalId": terminal_id,
-                "bankCode": bank_code,
-                "accountId": account_number,
-            },
+        url = f"{VERIFY_BASE_URL}/verify/identity/account-number/resolve"
+        payload = {
+            "accountNumber": account_number,
+            "bankCode": bank_code,
+        }
+
+        response = httpx.post(
+            url,
+            headers=_auth_headers(),
+            json=payload,
             timeout=15,
         )
+
+        # Token may be stale; force refresh once on unauthorized.
+        if response.status_code == 401:
+            response = httpx.post(
+                url,
+                headers=_auth_headers(force_refresh=True),
+                json=payload,
+                timeout=15,
+            )
 
         if os.getenv("INTERSWITCH_DEBUG_NAME_INQUIRY", "").strip().lower() in {"1", "true", "yes", "on"}:
             print("NAME_INQUIRY_STATUS:", response.status_code)
@@ -479,18 +484,22 @@ def verify_bank_account(account_number: str, bank_code: str) -> dict:
         response.raise_for_status()
         data = response.json()
 
-        response_code = str(data.get("ResponseCode") or data.get("responseCode") or "")
-        response_grouping = str(data.get("ResponseCodeGrouping") or data.get("responseCodeGrouping") or "").upper()
+        result = data.get("data") if isinstance(data, dict) else None
+        if not isinstance(result, dict):
+            result = {}
+
+        response_code = str(data.get("responseCode") or data.get("ResponseCode") or "")
         account_name = (
-            data.get("AccountName")
+            result.get("accountName")
+            or result.get("AccountName")
+            or result.get("beneficiaryName")
+            or result.get("BeneficiaryName")
             or data.get("accountName")
-            or data.get("beneficiaryName")
-            or data.get("BeneficiaryName")
-            or (data.get("bankDetails") or {}).get("accountName", "")
+            or data.get("AccountName")
             or ""
         )
 
-        is_success = response_code == "90000" or response_grouping == "SUCCESSFUL" or response_code in {"00", "0"}
+        is_success = bool(account_name) and response_code not in {"ERROR", "VALIDATION_ERROR"}
 
         if is_success and account_name:
             return {
@@ -501,12 +510,7 @@ def verify_bank_account(account_number: str, bank_code: str) -> dict:
                 "raw": data,
             }
 
-        error_message = (
-            data.get("ResponseDescription")
-            or data.get("responseDescription")
-            or data.get("message")
-            or f"Verification failed - code: {response_code}"
-        )
+        error_message = data.get("message") or data.get("ResponseDescription") or f"Verification failed - code: {response_code}"
         return {"status": "error", "message": error_message, "raw": data}
     except httpx.HTTPStatusError as e:
         return {"status": "error", "message": _parse_error_message(e.response)}

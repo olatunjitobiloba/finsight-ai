@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f8f4ee"/>
   <title>FinSight AI - Financial Decision Engine</title>
   <link rel="manifest" href="./manifest.json" />
-  <link rel="stylesheet" href="./assets/style.css?v=20260325d" />
+  <link rel="stylesheet" href="./assets/style.css?v=20260325h" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,700&display=swap" rel="stylesheet" />
@@ -52,7 +52,7 @@
         </p>
         <a class="hero-cta" href="#inputPanel">Start analysis</a>
       </div>
-      <div class="hero-cards" aria-hidden="true">
+      <div class="hero-cards">
         <div class="hero-card hero-card-a"></div>
         <div class="hero-card hero-card-b"></div>
         <div class="hero-card hero-card-c"></div>
@@ -98,7 +98,7 @@
 
     <section class="editorial-flow" aria-label="Financial storyline modules">
       <article class="flow-row flow-row-a">
-        <div class="flow-media flow-media-a" aria-hidden="true"></div>
+        <div class="flow-media flow-media-a"></div>
         <div class="flow-copy">
           <p class="section-eyebrow">Chapter A</p>
           <h3>See the whole month at once.</h3>
@@ -110,7 +110,7 @@
       </article>
 
       <article class="flow-row flow-row-b">
-        <div class="flow-media flow-media-b" aria-hidden="true"></div>
+        <div class="flow-media flow-media-b"></div>
         <div class="flow-copy">
           <p class="section-eyebrow">Chapter B</p>
           <h3>Alternate perspective, same truth.</h3>
@@ -122,7 +122,7 @@
       </article>
 
       <article class="flow-row flow-row-c">
-        <div class="flow-media flow-media-c" aria-hidden="true"></div>
+        <div class="flow-media flow-media-c"></div>
         <div class="flow-copy">
           <p class="section-eyebrow">Chapter C</p>
           <h3>Move from diagnosis to execution.</h3>
@@ -159,6 +159,18 @@
       </div>
 
       <div class="tab-content" id="contentSMS" role="tabpanel" aria-labelledby="tabSMS">
+        <div class="bank-select-wrap">
+          <label for="smsBankType" class="bank-select-label">Select your bank</label>
+          <select id="smsBankType" class="bank-select" aria-label="Select bank for SMS parsing">
+            <option value="">Choose bank</option>
+            <option value="access">Access Bank</option>
+            <option value="gt">GTBank</option>
+            <option value="first">First Bank</option>
+            <option value="zenith">Zenith Bank</option>
+            <option value="uba">UBA</option>
+          </select>
+        </div>
+
         <textarea
           id="smsInput"
           class="sms-textarea"
@@ -274,7 +286,7 @@
       </div>
     </section>
 
-    <section class="story-strip" aria-hidden="true">
+    <section class="story-strip">
       <div class="story-block story-1"></div>
       <div class="story-block story-2"></div>
       <div class="story-block story-3"></div>
@@ -387,17 +399,29 @@
 
   <div class="modal hidden" id="executeModal" role="dialog" aria-modal="true" aria-labelledby="executeModalTitle">
     <div class="modal-box">
-      <div class="modal-title" id="executeModalTitle">Execute Fix Payment</div>
-      <div class="modal-sub">Enter customer ID and amount, then confirm. If sandbox entitlement is pending, we will show that clearly.</div>
+      <div class="modal-title" id="executeModalTitle">Execute Bill Payment</div>
+      <div class="modal-sub">Select a biller and payment type, then enter customer ID and amount.</div>
+
+      <div class="execute-status-check hidden" id="executeStatusBefore">
+        <i class="fa-solid fa-exclamation-triangle" aria-hidden="true"></i>
+        <div id="executeStatusMessage"></div>
+      </div>
+
+      <label for="executeBillerId" class="execute-label">Select Biller</label>
+      <select id="executeBillerId" class="execute-input" onchange="onExecuteBillerSelected()" aria-label="Select a biller">
+        <option value="">-- Loading billers --</option>
+      </select>
+
+      <label for="executePaymentItemId" class="execute-label">Payment Type</label>
+      <select id="executePaymentItemId" class="execute-input" aria-label="Select payment type">
+        <option value="">-- Select biller first --</option>
+      </select>
 
       <label for="executeCustomerId" class="execute-label">Customer ID</label>
-      <input id="executeCustomerId" class="execute-input" type="text" placeholder="Phone, smartcard, or meter number" autocomplete="off" />
+      <input id="executeCustomerId" class="execute-input" type="text" placeholder="Phone, smartcard, meter, or account number" autocomplete="off" />
 
       <label for="executeAmount" class="execute-label">Amount (NGN)</label>
       <input id="executeAmount" class="execute-input" type="number" min="1" step="0.01" placeholder="500" />
-
-      <label for="executePaymentCode" class="execute-label">Payment Code (optional now, required after entitlement)</label>
-      <input id="executePaymentCode" class="execute-input" type="text" placeholder="e.g. 10901" autocomplete="off" />
 
       <div class="execute-actions">
         <button class="btn btn-primary" onclick="confirmExecutePayment()" type="button">
@@ -508,6 +532,6 @@
 
   <div class="toast hidden" id="toast"></div>
 
-  <script src="./assets/app.js?v=20260325d"></script>
+  <script src="./assets/app.js?v=20260325h"></script>
 </body>
 </html>

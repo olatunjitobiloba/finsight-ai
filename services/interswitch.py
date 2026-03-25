@@ -1,6 +1,8 @@
 """Interswitch Marketplace Routing integration for FinSight AI."""
 
 import base64
+import hashlib
+import hmac
 import os
 import time
 import uuid
@@ -10,12 +12,13 @@ import httpx
 
 TOKEN_URL = os.getenv("INTERSWITCH_TOKEN_URL", "https://qa.interswitchng.com/passport/oauth/token")
 QUICKTELLER_URL = os.getenv("INTERSWITCH_QT_BASE_URL", "https://qa.interswitchng.com/quicktellerservice/api/v5")
+QUICKTELLER_V2_URL = os.getenv("INTERSWITCH_QT_V2_BASE_URL", "https://sandbox.interswitchng.com/api/v2/quickteller")
 VERIFY_BASE_URL = os.getenv(
     "INTERSWITCH_VERIFY_BASE_URL",
     "https://api-marketplace-routing.k8.isw.la/marketplace-routing/api/v1",
 )
 BASE_URL = os.getenv("INTERSWITCH_BASE_URL", VERIFY_BASE_URL)
-TERMINAL_ID = os.getenv("INTERSWITCH_TERMINAL_ID", "3PBL0001")
+TERMINAL_ID = os.getenv("INTERSWITCH_TERMINAL_ID", "3DMO0001")
 
 _token_cache = {"token": None, "expires_at": 0}
 
@@ -99,12 +102,10 @@ def get_access_token(force_refresh: bool = False) -> str:
         raise RuntimeError(f"Interswitch auth error: {str(e)}") from e
 
 
-def get_account_inquiry_access_token() -> str:
-    """Get fresh token for account inquiry when separate credentials are configured."""
-    client_id = _env("INTERSWITCH_ACCOUNT_CLIENT_ID", "INTERSWITCH_CLIENT_ID", "INTERSWITCH_API_CLIENT_ID")
+def get_name_inquiry_token() -> str:
+    """Get access token specifically scoped for Send Money / Name Inquiry."""
+    client_id = _env("INTERSWITCH_CLIENT_ID", "INTERSWITCH_API_CLIENT_ID")
     client_secret = _env(
-        "INTERSWITCH_ACCOUNT_CLIENT_SECRET",
-        "INTERSWITCH_ACCOUNT_SECRET",
         "INTERSWITCH_CLIENT_SECRET",
         "INTERSWITCH_SECRET_KEY",
         "INTERSWITCH_SECRET",
@@ -113,9 +114,8 @@ def get_account_inquiry_access_token() -> str:
 
     if not client_id or not client_secret:
         raise ValueError(
-            "Account inquiry credentials are missing. "
-            "Set INTERSWITCH_ACCOUNT_CLIENT_ID and INTERSWITCH_ACCOUNT_CLIENT_SECRET, "
-            "or fallback INTERSWITCH_CLIENT_ID and INTERSWITCH_CLIENT_SECRET."
+            "INTERSWITCH_CLIENT_ID and INTERSWITCH_CLIENT_SECRET/INTERSWITCH_SECRET "
+            "must be set as environment variables."
         )
 
     credentials = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
@@ -126,7 +126,10 @@ def get_account_inquiry_access_token() -> str:
             "Content-Type": "application/x-www-form-urlencoded",
             "Accept": "application/json",
         },
-        data={"grant_type": "client_credentials"},
+        data={
+            "grant_type": "client_credentials",
+            "scope": "profile",
+        },
         timeout=15,
     )
     response.raise_for_status()
@@ -144,6 +147,50 @@ def _auth_headers() -> dict:
         "Accept": "application/json",
         "TerminalID": TERMINAL_ID,
         "TerminalId": TERMINAL_ID,
+    }
+
+
+def _build_interswitch_auth_headers(http_method: str, url: str) -> dict:
+    """Build InterswitchAuth headers used by Quickteller v2 bill-payment APIs."""
+    client_id = _env("INTERSWITCH_CLIENT_ID", "INTERSWITCH_API_CLIENT_ID")
+    secret_key = _env(
+        "INTERSWITCH_CLIENT_SECRET",
+        "INTERSWITCH_SECRET_KEY",
+        "INTERSWITCH_SECRET",
+        "INTERSWITCH_API_SECRET",
+    )
+
+    if not client_id or not secret_key:
+        raise ValueError(
+            "INTERSWITCH_CLIENT_ID and INTERSWITCH_CLIENT_SECRET/INTERSWITCH_SECRET "
+            "must be set as environment variables."
+        )
+
+    timestamp = str(int(time.time()))
+    nonce = uuid.uuid4().hex
+    method = (http_method or "GET").upper().strip()
+
+    signature_string = f"{client_id}{method}{url}{timestamp}{nonce}"
+    raw_sig = hmac.new(
+        secret_key.encode("utf-8"),
+        signature_string.encode("utf-8"),
+        hashlib.sha1,
+    ).digest()
+    signature = base64.b64encode(raw_sig).decode("utf-8")
+
+    auth_raw = f"{client_id}:{timestamp}:{nonce}:{signature}"
+    auth_string = base64.b64encode(auth_raw.encode("utf-8")).decode("utf-8")
+
+    return {
+        "Authorization": f"InterswitchAuth {auth_string}",
+        "Signature": signature,
+        "Timestamp": timestamp,
+        "Nonce": nonce,
+        "SignatureMethod": "SHA1",
+        "TerminalID": TERMINAL_ID,
+        "TerminalId": TERMINAL_ID,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
     }
 
 
@@ -172,9 +219,10 @@ def _generate_reference(prefix: str = "FS") -> str:
 def get_billers() -> dict:
     """Fetch all supported billers for VAS payments."""
     try:
+        url = f"{QUICKTELLER_V2_URL}/billers"
         response = httpx.get(
-            f"{QUICKTELLER_URL}/services",
-            headers=_auth_headers(),
+            url,
+            headers=_build_interswitch_auth_headers("GET", url),
             timeout=15,
         )
         response.raise_for_status()
@@ -182,7 +230,7 @@ def get_billers() -> dict:
         if isinstance(payload, list):
             return {"status": "success", "data": payload}
         if isinstance(payload, dict):
-            data = payload.get("data")
+            data = payload.get("data") or payload.get("billers") or payload.get("Billers")
             if isinstance(data, list):
                 return {"status": "success", "data": data}
         return {"status": "success", "data": []}
@@ -195,10 +243,10 @@ def get_billers() -> dict:
 def get_payment_items(biller_id: int) -> dict:
     """Fetch biller payment items and payment codes."""
     try:
+        url = f"{QUICKTELLER_V2_URL}/billers/{int(biller_id)}/paymentitems"
         response = httpx.get(
-            f"{QUICKTELLER_URL}/services/options",
-            headers=_auth_headers(),
-            params={"serviceid": biller_id},
+            url,
+            headers=_build_interswitch_auth_headers("GET", url),
             timeout=15,
         )
         response.raise_for_status()
@@ -206,7 +254,7 @@ def get_payment_items(biller_id: int) -> dict:
         if isinstance(payload, list):
             return {"status": "success", "data": payload}
         if isinstance(payload, dict):
-            data = payload.get("data")
+            data = payload.get("data") or payload.get("paymentitems") or payload.get("paymentItems")
             if isinstance(data, list):
                 return {"status": "success", "data": data}
         return {"status": "success", "data": []}
@@ -219,14 +267,15 @@ def get_payment_items(biller_id: int) -> dict:
 def validate_customer(customer_id: str, payment_code: str) -> dict:
     """Validate customer details before VAS payment."""
     try:
+        url = f"{QUICKTELLER_V2_URL}/customers/validations"
         response = httpx.post(
-            f"{QUICKTELLER_URL}/Transactions/validatecustomers",
-            headers=_auth_headers(),
+            url,
+            headers=_build_interswitch_auth_headers("POST", url),
             json={
                 "customers": [
                     {
-                        "PaymentCode": payment_code,
-                        "CustomerId": customer_id,
+                        "paymentCode": payment_code,
+                        "customerId": customer_id,
                     }
                 ],
                 "TerminalId": TERMINAL_ID,
@@ -238,16 +287,17 @@ def validate_customer(customer_id: str, payment_code: str) -> dict:
 
         customers = []
         if isinstance(data, dict):
-            customers = data.get("Customers") or data.get("customers") or data.get("data") or []
+            customers = data.get("customers") or data.get("Customers") or data.get("data") or []
 
         if customers:
             customer_data = customers[0]
             return {
                 "status": "success",
-                "customer_name": customer_data.get("FullName", ""),
-                "amount": customer_data.get("Amount", 0),
-                "amount_type": customer_data.get("AmountTypeDescription", ""),
-                "surcharge": customer_data.get("Surcharge", 0),
+                "customer_name": customer_data.get("customerName") or customer_data.get("FullName", ""),
+                "amount": customer_data.get("amount") or customer_data.get("Amount", 0),
+                "amount_type": customer_data.get("amountType") or customer_data.get("AmountTypeDescription", ""),
+                "surcharge": customer_data.get("surcharge") or customer_data.get("Surcharge", 0),
+                "response_code": customer_data.get("responseCode") or customer_data.get("ResponseCode", ""),
                 "raw": customer_data,
             }
         return {"status": "error", "message": str(data)}
@@ -262,21 +312,29 @@ def pay_bill(
     payment_code: str,
     amount_naira: float,
     reference: Optional[str] = None,
+    customer_mobile: Optional[str] = None,
+    customer_email: Optional[str] = None,
 ) -> dict:
-    """Execute bill payment via Quickteller v5 transactions endpoint."""
-    ref = reference or _generate_reference("FS")
+    """Execute bill payment via Quickteller v2 payment advice endpoint."""
+    ref_prefix = _env("INTERSWITCH_REQUEST_REF_PREFIX") or "1453"
+    ref = reference or f"{ref_prefix}{int(time.time())}"
     amount_minor = int(round(float(amount_naira) * 100))
+    mobile = (customer_mobile or _env("INTERSWITCH_TEST_CUSTOMER_MOBILE") or "2348056731576").strip()
+    email = (customer_email or _env("INTERSWITCH_TEST_CUSTOMER_EMAIL") or "test@test.com").strip()
 
     try:
+        url = f"{QUICKTELLER_V2_URL}/payments/advices"
         response = httpx.post(
-            f"{QUICKTELLER_URL}/Transactions",
-            headers=_auth_headers(),
+            url,
+            headers=_build_interswitch_auth_headers("POST", url),
             json={
+                "TerminalId": TERMINAL_ID,
                 "customerId": customer_id,
                 "amount": str(amount_minor),
                 "requestReference": ref,
                 "paymentCode": payment_code,
-                "TerminalId": TERMINAL_ID,
+                "customerMobile": mobile,
+                "customerEmail": email,
             },
             timeout=20,
         )
@@ -285,21 +343,41 @@ def pay_bill(
 
         if isinstance(data, dict):
             result = data.get("data", data)
+            response_code = str(result.get("responseCode") or result.get("ResponseCode") or data.get("responseCode") or "")
+            response_desc = (
+                result.get("responseDescription")
+                or result.get("ResponseDescription")
+                or data.get("responseDescription")
+                or data.get("message")
+                or "Payment processed"
+            )
+            grouping = str(result.get("responseCodeGrouping") or result.get("ResponseCodeGrouping") or "")
+            success = response_code in {"00", "0"} or grouping.upper() == "SUCCESSFUL"
+
+            if not success:
+                return {
+                    "status": "error",
+                    "reference": ref,
+                    "amount": amount_naira,
+                    "amount_minor": amount_minor,
+                    "response_code": response_code,
+                    "message": response_desc,
+                    "raw": data,
+                }
+
             return {
                 "status": "success",
                 "reference": (
-                    result.get("RequestReference")
+                    result.get("requestReference")
+                    or result.get("RequestReference")
                     or result.get("TransactionRef")
                     or ref
                 ),
                 "amount": amount_naira,
                 "amount_minor": amount_minor,
-                "response_code": result.get("ResponseCode", data.get("ResponseCode", "")),
-                "description": result.get(
-                    "ResponseDescription",
-                    data.get("ResponseDescription", "Payment processed"),
-                ),
-                "grouping": result.get("ResponseCodeGrouping", ""),
+                "response_code": response_code,
+                "description": response_desc,
+                "grouping": grouping,
                 "provider": "Interswitch",
                 "raw": data,
             }
@@ -372,15 +450,17 @@ def get_bank_list() -> dict:
 
 
 def verify_bank_account(account_number: str, bank_code: str) -> dict:
-    """Resolve account name via Quickteller account inquiry endpoint."""
-    terminal_id = os.getenv("INTERSWITCH_TERMINAL_ID", "3PBL0001")
+    """Resolve account name via Quickteller Name Inquiry endpoint."""
+    # Name inquiry in sandbox commonly expects Send Money terminal id.
+    terminal_id = os.getenv("INTERSWITCH_NAME_INQUIRY_TERMINAL_ID", "3DMO0001")
 
     try:
         # Account inquiry requires header-based identity values.
+        token = get_name_inquiry_token()
         response = httpx.get(
             f"{QUICKTELLER_URL}/transactions/DoAccountNameInquiry",
             headers={
-                "Authorization": f"Bearer {get_account_inquiry_access_token()}",
+                "Authorization": f"Bearer {token}",
                 "Content-Type": "application/json",
                 "TerminalId": terminal_id,
                 "bankCode": bank_code,
@@ -388,20 +468,28 @@ def verify_bank_account(account_number: str, bank_code: str) -> dict:
             },
             timeout=15,
         )
+
+        if os.getenv("INTERSWITCH_DEBUG_NAME_INQUIRY", "").strip().lower() in {"1", "true", "yes", "on"}:
+            print("NAME_INQUIRY_STATUS:", response.status_code)
+            print("NAME_INQUIRY_RAW:", response.text)
+
         response.raise_for_status()
         data = response.json()
 
-        response_code = str(data.get("responseCode", "") or data.get("ResponseCode", ""))
+        response_code = str(data.get("ResponseCode") or data.get("responseCode") or "")
+        response_grouping = str(data.get("ResponseCodeGrouping") or data.get("responseCodeGrouping") or "").upper()
         account_name = (
-            data.get("accountName")
-            or data.get("AccountName")
+            data.get("AccountName")
+            or data.get("accountName")
             or data.get("beneficiaryName")
             or data.get("BeneficiaryName")
             or (data.get("bankDetails") or {}).get("accountName", "")
             or ""
         )
 
-        if response_code in {"00", "0"} and account_name:
+        is_success = response_code == "90000" or response_grouping == "SUCCESSFUL" or response_code in {"00", "0"}
+
+        if is_success and account_name:
             return {
                 "status": "success",
                 "account_name": account_name,
@@ -411,10 +499,10 @@ def verify_bank_account(account_number: str, bank_code: str) -> dict:
             }
 
         error_message = (
-            data.get("responseDescription")
-            or data.get("ResponseDescription")
+            data.get("ResponseDescription")
+            or data.get("responseDescription")
             or data.get("message")
-            or "Verification failed"
+            or f"Verification failed - code: {response_code}"
         )
         return {"status": "error", "message": error_message, "raw": data}
     except httpx.HTTPStatusError as e:

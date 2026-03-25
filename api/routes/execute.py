@@ -6,7 +6,7 @@ from typing import Optional
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from services.interswitch import get_billers, get_default_payment_code, get_payment_items, pay_bill
+from services.interswitch import get_billers, get_default_payment_code, get_payment_items, pay_bill, validate_customer
 
 router = APIRouter(prefix="/api/execute", tags=["execute"])
 
@@ -16,6 +16,11 @@ class ExecutePaymentRequest(BaseModel):
     amount: float = Field(..., gt=0)
     payment_code: Optional[str] = None
     reference: Optional[str] = None
+
+
+class ValidateCustomerRequest(BaseModel):
+    customer_id: str = Field(..., min_length=3)
+    payment_code: str = Field(..., min_length=3)
 
 
 def _is_sandbox_pending(message: str) -> bool:
@@ -82,6 +87,41 @@ async def execute_fix_payment(request: ExecutePaymentRequest):
     }
 
 
+@router.post("/validate")
+async def execute_validate_customer(request: ValidateCustomerRequest):
+    """Validate a customer id and payment code before payment advice."""
+    result = validate_customer(
+        customer_id=request.customer_id.strip(),
+        payment_code=request.payment_code.strip(),
+    )
+
+    if result.get("status") == "success":
+        return {
+            "success": True,
+            "status": "success",
+            "customer_name": result.get("customer_name", ""),
+            "amount": result.get("amount", 0),
+            "amount_type": result.get("amount_type", ""),
+            "response_code": result.get("response_code", ""),
+            "raw": result.get("raw", {}),
+        }
+
+    message = result.get("message", "Validation failed")
+    if _is_sandbox_pending(message):
+        return {
+            "success": False,
+            "status": "sandbox_pending",
+            "message": "Sandbox pending: customer validation endpoint is not yet enabled for this app.",
+            "provider_message": message,
+        }
+
+    return {
+        "success": False,
+        "status": "failed",
+        "message": message,
+    }
+
+
 @router.get("/billers")
 async def execute_billers():
     """Expose billers list for the execution flow."""
@@ -130,7 +170,7 @@ async def execute_status():
         or os.getenv("INTERSWITCH_SECRET")
         or ""
     ).strip()
-    terminal_id = (os.getenv("INTERSWITCH_TERMINAL_ID") or "3PBL0001").strip()
+    terminal_id = (os.getenv("INTERSWITCH_TERMINAL_ID") or "3DMO0001").strip()
     payment_code = (get_default_payment_code() or "").strip()
 
     checks = {

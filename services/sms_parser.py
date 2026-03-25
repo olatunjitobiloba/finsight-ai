@@ -18,6 +18,32 @@ from datetime import datetime
 from typing import Dict, Optional, List
 
 
+def normalize_bank_type(bank_type: Optional[str]) -> Optional[str]:
+    """Normalize user-provided bank labels to parser bank codes."""
+    if not bank_type:
+        return None
+
+    normalized = re.sub(r"[^a-z]", "", bank_type.lower())
+    aliases = {
+        "access": "access",
+        "accessbank": "access",
+        "gt": "gt",
+        "gtb": "gt",
+        "gtbank": "gt",
+        "guarantytrust": "gt",
+        "guarantytrustbank": "gt",
+        "first": "first",
+        "firstbank": "first",
+        "fbn": "first",
+        "zenith": "zenith",
+        "zenithbank": "zenith",
+        "uba": "uba",
+        "unitedbankforafrica": "uba"
+    }
+
+    return aliases.get(normalized)
+
+
 def parse_sms(sms_text: str, bank_type: Optional[str] = None) -> Optional[Dict]:
     """
     Parse transaction SMS and return structured data.
@@ -36,7 +62,9 @@ def parse_sms(sms_text: str, bank_type: Optional[str] = None) -> Optional[Dict]:
         
         # Use bank type from user or detect it
         if bank_type:
-            bank = bank_type.lower()
+            bank = normalize_bank_type(bank_type)
+            if not bank:
+                return None
         else:
             bank = detect_bank(cleaned_text)
             if not bank:

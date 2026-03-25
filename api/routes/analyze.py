@@ -35,6 +35,7 @@ router = APIRouter()
 # ── REQUEST MODEL ──────────────────────────────────
 class AnalyzeRequest(BaseModel):
     sms_text:   str
+    bank_type:  Optional[str] = None
     user_id:    Optional[str] = "demo-user"
     balance:    Optional[float] = None   # current balance if known
 
@@ -80,7 +81,7 @@ async def analyze(request: AnalyzeRequest):
 
     # ── 3. Parse SMS messages
     try:
-        parse_result = parse_multiple_sms(sms_lines)
+        parse_result = parse_multiple_sms(sms_lines, request.bank_type)
         transactions = parse_result.get("parsed", [])
     except Exception as e:
         raise HTTPException(
@@ -176,7 +177,8 @@ async def analyze(request: AnalyzeRequest):
             "sms_received":   len(sms_lines),
             "transactions_parsed": len(transactions),
             "transactions_saved":  saved_count,
-            "parse_rate": parse_result.get("success_rate", 0)
+            "parse_rate": parse_result.get("success_rate", 0),
+            "bank_type_used": request.bank_type
         },
 
         # Transaction list (for frontend timeline)

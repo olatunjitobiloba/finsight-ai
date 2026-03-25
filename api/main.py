@@ -7,6 +7,8 @@ from api.routes.health import router as health_router
 from api.routes.parse import router as parse_router
 from api.routes.execute import router as execute_router
 from api.routes.bank_verify import router as bank_verify_router
+from api.routes.bills import router as bills_router
+from api.routes.otp import router as otp_router
 
 app = FastAPI(
     title="FinSight AI",
@@ -28,6 +30,8 @@ app.include_router(health_router)
 app.include_router(parse_router)
 app.include_router(execute_router)
 app.include_router(bank_verify_router)
+app.include_router(bills_router)
+app.include_router(otp_router)
 
 
 @app.get("/")
@@ -55,6 +59,13 @@ def root():
             "GET /api/bank-verify/banks",
             "POST /api/bank-verify/verify",
             "GET /api/parse/banks",
-            "GET /api/parse/demo"
+            "GET /api/parse/demo",
+            "GET /api/bills/billers",
+            "POST /api/bills/items",
+            "POST /api/bills/validate",
+            "POST /api/bills/pay",
+            "GET /api/bills/transaction?reference=...",
+            "POST /api/otp/generate",
+            "POST /api/otp/verify"
         ],
     }

@@ -21,6 +21,13 @@ from .interswitch import (
     verify_bank_account,
     verify_otp,
 )
+from .bills_service import (
+    get_billers as get_vas_billers,
+    get_payment_items as get_vas_payment_items,
+    validate_customer as validate_vas_customer,
+    pay_bill as pay_vas_bill,
+    get_transaction_status as get_vas_transaction_status,
+)
 
 __all__ = [
     'parse_sms',
@@ -38,5 +45,10 @@ __all__ = [
     'verify_otp',
     'bank_transfer',
     'get_biller_info',
-    'validate_customer'
+    'validate_customer',
+    'get_vas_billers',
+    'get_vas_payment_items',
+    'validate_vas_customer',
+    'pay_vas_bill',
+    'get_vas_transaction_status'
 ]

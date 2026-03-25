@@ -11,10 +11,11 @@ if ("serviceWorker" in navigator) {
   });
 }
 
-const API_BASE = window.location.hostname === "localhost"
-  ? "http://localhost:8000"
-  : window.location.origin;
-const IS_LOCALHOST = window.location.hostname === "localhost";
+const host = window.location.hostname;
+const IS_LOCALHOST = host === "localhost" || host === "127.0.0.1" || host === "[::1]";
+
+// Optional override for cases where frontend and API are on different domains.
+const API_BASE = window.FINSIGHT_API_BASE || (IS_LOCALHOST ? "http://localhost:8000" : "");
 const ALLOW_MOCK_FALLBACK = IS_LOCALHOST;
 
 // State
@@ -50,29 +51,87 @@ const PILLAR_MAXES = {
   category_diversity: 15
 };
 
-// Demo data
-const DEMO_SMS = `Access Bank: Your account credited with N150,000.00. Narration: Salary March 2026. Bal: N150,000.00
-Acct 0123456789 debited with NGN5,000.00 on 01-Mar-26. Desc: UBER TRIP. Bal: NGN145,000.00
-Acct 0123456789 debited with NGN4,500.00 on 02-Mar-26. Desc: KFC IKEJA. Bal: NGN140,500.00
-Acct 0123456789 debited with NGN15,000.00 on 03-Mar-26. Desc: JUMIA ORDER. Bal: NGN125,500.00
-Acct 0123456789 debited with NGN5,000.00 on 03-Mar-26. Desc: DSTV SUBSCRIPTION. Bal: NGN120,500.00
-Acct 0123456789 debited with NGN3,000.00 on 05-Mar-26. Desc: AIRTEL DATA. Bal: NGN117,500.00
-Acct 0123456789 debited with NGN12,000.00 on 07-Mar-26. Desc: CLUB OUTING LAGOS. Bal: NGN105,500.00
-Acct 0123456789 debited with NGN8,500.00 on 08-Mar-26. Desc: CINEMA GENESIS. Bal: NGN97,000.00
-Acct 0123456789 debited with NGN3,200.00 on 10-Mar-26. Desc: CHICKEN REPUBLIC. Bal: NGN93,800.00
-Acct 0123456789 debited with NGN9,000.00 on 25-Mar-26. Desc: SLOT ELECTRONICS. Bal: NGN57,723.00`;
+// Demo data - 3 months with multiple income, bills, savings, and diverse categories
+const DEMO_SMS = `Access Bank: Your account credited with N200,000.00. Narration: Salary January 2026. Bal: N200,000.00
+Acct 0123456789 debited with NGN75,000.00 on 02-Jan-26. Desc: RENT PAYMENT JAN. Bal: NGN125,000.00
+Acct 0123456789 debited with NGN4,500.00 on 03-Jan-26. Desc: SHOPRITE GROCERIES. Bal: NGN120,500.00
+Acct 0123456789 debited with NGN5,000.00 on 03-Jan-26. Desc: DSTV SUBSCRIPTION. Bal: NGN115,500.00
+Acct 0123456789 debited with NGN3,000.00 on 05-Jan-26. Desc: AIRTEL DATA. Bal: NGN112,500.00
+Acct 0123456789 debited with NGN25,000.00 on 05-Jan-26. Desc: PIGGYVEST SAVINGS. Bal: NGN87,500.00
+Acct 0123456789 debited with NGN6,500.00 on 08-Jan-26. Desc: KFC IKEJA. Bal: NGN81,000.00
+Acct 0123456789 debited with NGN8,000.00 on 10-Jan-26. Desc: UBER TRIPS. Bal: NGN73,000.00
+Acct 0123456789 debited with NGN12,000.00 on 12-Jan-26. Desc: CLUB OUTING. Bal: NGN61,000.00
+Acct 0123456789 credited with NGN35,000.00 on 15-Jan-26. Narration: Freelance project payment. Bal: NGN96,000.00
+Acct 0123456789 debited with NGN7,200.00 on 18-Jan-26. Desc: CINEMA & DINNER. Bal: NGN88,800.00
+Acct 0123456789 debited with NGN9,000.00 on 22-Jan-26. Desc: JUMIA SHOPPING. Bal: NGN79,800.00
+Acct 0123456789 debited with NGN15,000.00 on 25-Jan-26. Desc: ELECTRICITY IKEDC. Bal: NGN64,800.00
+Acct 0123456789 credited with N200,000.00 on 01-Feb-26. Narration: Salary February 2026. Bal: N264,800.00
+Acct 0123456789 debited with NGN75,000.00 on 02-Feb-26. Desc: RENT PAYMENT FEB. Bal: NGN189,800.00
+Acct 0123456789 debited with NGN5,500.00 on 03-Feb-26. Desc: SHOPRITE GROCERIES. Bal: NGN184,300.00
+Acct 0123456789 debited with NGN5,000.00 on 03-Feb-26. Desc: GOTV SUBSCRIPTION. Bal: NGN179,300.00
+Acct 0123456789 debited with NGN3,000.00 on 05-Feb-26. Desc: AIRTEL DATA. Bal: NGN176,300.00
+Acct 0123456789 debited with NGN30,000.00 on 06-Feb-26. Desc: COWRYWISE INVESTMENT. Bal: NGN146,300.00
+Acct 0123456789 debited with NGN5,800.00 on 08-Feb-26. Desc: CHICKEN REPUBLIC. Bal: NGN140,500.00
+Acct 0123456789 debited with NGN7,500.00 on 10-Feb-26. Desc: BOLT RIDES. Bal: NGN133,000.00
+Acct 0123456789 debited with NGN14,000.00 on 13-Feb-26. Desc: WEEKEND SHOPPING. Bal: NGN119,000.00
+Acct 0123456789 credited with NGN32,000.00 on 16-Feb-26. Narration: Freelance consultation. Bal: NGN151,000.00
+Acct 0123456789 debited with NGN8,500.00 on 19-Feb-26. Desc: RESTAURANT DINNER. Bal: NGN142,500.00
+Acct 0123456789 debited with NGN16,000.00 on 22-Feb-26. Desc: FASHION NOVA STORE. Bal: NGN126,500.00
+Acct 0123456789 debited with NGN12,000.00 on 24-Feb-26. Desc: ELECTRICITY IKEDC. Bal: NGN114,500.00
+Acct 0123456789 credited with N200,000.00 on 01-Mar-26. Narration: Salary March 2026. Bal: N314,500.00
+Acct 0123456789 debited with NGN75,000.00 on 02-Mar-26. Desc: RENT PAYMENT MAR. Bal: NGN239,500.00
+Acct 0123456789 debited with NGN6,200.00 on 03-Mar-26. Desc: SHOPRITE GROCERIES. Bal: NGN233,300.00
+Acct 0123456789 debited with NGN5,000.00 on 03-Mar-26. Desc: DSTV SUBSCRIPTION. Bal: NGN228,300.00
+Acct 0123456789 debited with NGN3,000.00 on 05-Mar-26. Desc: AIRTEL DATA. Bal: NGN225,300.00
+Acct 0123456789 debited with NGN25,000.00 on 05-Mar-26. Desc: PIGGYVEST SAVINGS. Bal: NGN200,300.00
+Acct 0123456789 debited with NGN5,500.00 on 07-Mar-26. Desc: KFC IKEJA. Bal: NGN194,800.00
+Acct 0123456789 debited with NGN7,800.00 on 09-Mar-26. Desc: UBER TRIPS. Bal: NGN187,000.00
+Acct 0123456789 debited with NGN18,000.00 on 10-Mar-26. Desc: SHOPPING WEEKEND. Bal: NGN169,000.00
+Acct 0123456789 credited with NGN30,000.00 on 14-Mar-26. Narration: Project bonus payment. Bal: NGN199,000.00
+Acct 0123456789 debited with NGN9,000.00 on 17-Mar-26. Desc: CINEMA & DINNER. Bal: NGN190,000.00
+Acct 0123456789 debited with NGN12,000.00 on 20-Mar-26. Desc: JUMIA ELECTRONICS. Bal: NGN178,000.00
+Acct 0123456789 debited with NGN15,000.00 on 25-Mar-26. Desc: ELECTRICITY IKEDC. Bal: NGN163,000.00`;
 
 const DEMO_CSV = `Date,Description,Debit,Credit,Balance
-01/03/2026,Salary March 2026,,150000,150000
-01/03/2026,Uber Trip,5000,,145000
-02/03/2026,KFC Ikeja,4500,,140500
-03/03/2026,Jumia Order,15000,,125500
-03/03/2026,DSTV Subscription,5000,,120500
-05/03/2026,Airtel Data,3000,,117500
-07/03/2026,Club Outing Lagos,12000,,105500
-08/03/2026,Cinema Genesis,8500,,97000
-10/03/2026,Chicken Republic,3200,,93800
-25/03/2026,Slot Electronics,9000,,57723`;
+01/01/2026,Salary January 2026,,200000,200000
+02/01/2026,Rent Payment Jan,75000,,125000
+03/01/2026,Shoprite Groceries,4500,,120500
+03/01/2026,DSTV Subscription,5000,,115500
+05/01/2026,Airtel Data,3000,,112500
+05/01/2026,Piggyvest Savings,25000,,87500
+08/01/2026,KFC Ikeja,6500,,81000
+10/01/2026,Uber Trips,8000,,73000
+12/01/2026,Club Outing,12000,,61000
+15/01/2026,Freelance project payment,,35000,96000
+18/01/2026,Cinema & Dinner,7200,,88800
+22/01/2026,Jumia Shopping,9000,,79800
+25/01/2026,Electricity IKEDC,15000,,64800
+01/02/2026,Salary February 2026,,200000,264800
+02/02/2026,Rent Payment Feb,75000,,189800
+03/02/2026,Shoprite Groceries,5500,,184300
+03/02/2026,GoTV Subscription,5000,,179300
+05/02/2026,Airtel Data,3000,,176300
+06/02/2026,Cowrywise Investment,30000,,146300
+08/02/2026,Chicken Republic,5800,,140500
+10/02/2026,Bolt Rides,7500,,133000
+13/02/2026,Weekend Shopping,14000,,119000
+16/02/2026,Freelance consultation,,32000,151000
+19/02/2026,Restaurant Dinner,8500,,142500
+22/02/2026,Fashion Nova Store,16000,,126500
+24/02/2026,Electricity IKEDC,12000,,114500
+01/03/2026,Salary March 2026,,200000,314500
+02/03/2026,Rent Payment Mar,75000,,239500
+03/03/2026,Shoprite Groceries,6200,,233300
+03/03/2026,DSTV Subscription,5000,,228300
+05/03/2026,Airtel Data,3000,,225300
+05/03/2026,Piggyvest Savings,25000,,200300
+07/03/2026,KFC Ikeja,5500,,194800
+09/03/2026,Uber Trips,7800,,187000
+10/03/2026,Shopping Weekend,18000,,169000
+14/03/2026,Project bonus payment,,30000,199000
+17/03/2026,Cinema & Dinner,9000,,190000
+20/03/2026,Jumia Electronics,12000,,178000
+25/03/2026,Electricity IKEDC,15000,,163000`;
 
 function getEl(id) {
   return document.getElementById(id);
@@ -185,11 +244,18 @@ function showCSVPreview(name, rows) {
 
 async function analyzeNow() {
   const smsText = String(getEl("smsInput")?.value || "").trim();
+  const bankType = String(getEl("smsBankType")?.value || "").trim();
+
+  if (!bankType) {
+    showToast("Please select your bank before analyzing SMS alerts.", "error");
+    return;
+  }
+
   if (!smsText) {
     showToast("Please paste your SMS alerts first.", "error");
     return;
   }
-  await runAnalysis({ sms_text: smsText }, "/api/analyze");
+  await runAnalysis({ sms_text: smsText, bank_type: bankType }, "/api/analyze");
 }
 
 async function analyzeCSV() {
@@ -1024,6 +1090,8 @@ function openExecuteFlow() {
   }
 
   modal.classList.remove("hidden");
+  loadExecuteBillers();
+  checkExecuteIntegrationStatus();
 }
 
 function closeExecuteFlow(clearFields = false) {
@@ -1063,68 +1131,243 @@ function isSandboxPendingResponse(payload) {
     || message.includes("unauthorized");
 }
 
+async function checkExecuteIntegrationStatus() {
+  try {
+    const response = await fetch(`${API_BASE}/api/execute/status`);
+    const data = await response.json();
+
+    const statusBefore = getEl("executeStatusBefore");
+    if (!statusBefore) return;
+
+    if (data?.status === "ok") {
+      statusBefore.classList.add("hidden");
+      return;
+    }
+
+    const warnings = [];
+    if (!data?.checks?.client_id_present) warnings.push("Client ID not configured");
+    if (!data?.checks?.client_secret_present) warnings.push("Client Secret not configured");
+    if (!data?.checks?.terminal_id_present) warnings.push("Terminal ID not configured");
+
+    const message = data?.status === "sandbox_pending"
+      ? "Integration not ready: Awaiting Interswitch entitlement"
+      : `Integration not ready: ${warnings.join(", ") || "Unknown issue"}`;
+
+    statusBefore.innerHTML = `
+      <div style="color: #d4a574; padding: 12px; background: rgba(212, 165, 116, 0.1); border-left: 3px solid #d4a574; border-radius: 4px;">
+        <strong>⚠️ Integration Health Check:</strong> ${message}
+      </div>
+    `;
+    statusBefore.classList.remove("hidden");
+  } catch (err) {
+    console.warn("Integration status check failed:", err);
+  }
+}
+
+async function loadExecuteBillers() {
+  try {
+    const dropdown = getEl("executeBillerId");
+    if (!dropdown) return;
+
+    dropdown.innerHTML = '<option value="">Loading billers...</option>';
+    dropdown.disabled = true;
+
+    const response = await fetch(`${API_BASE}/api/bills/billers`);
+    const data = await response.json();
+
+    if (!response.ok || data?.status === "error") {
+      dropdown.innerHTML = '<option value="">-- Error loading billers --</option>';
+      return;
+    }
+
+    const billerCategories = data?.data || [];
+    if (!Array.isArray(billerCategories) || billerCategories.length === 0) {
+      dropdown.innerHTML = '<option value="">-- No billers available --</option>';
+      return;
+    }
+
+    let html = '<option value="">-- Select a biller --</option>';
+    billerCategories.forEach((category) => {
+      if (category?.billers && Array.isArray(category.billers)) {
+        category.billers.forEach((biller) => {
+          const id = biller?.id;
+          const name = biller?.name || "Unknown";
+          if (id) {
+            html += `<option value="${escapeHtml(String(id))}"> ${escapeHtml(name)}</option>`;
+          }
+        });
+      }
+    });
+
+    dropdown.innerHTML = html;
+    dropdown.disabled = false;
+  } catch (err) {
+    console.error("Failed to load billers:", err);
+    const dropdown = getEl("executeBillerId");
+    if (dropdown) {
+      dropdown.innerHTML = '<option value="">-- Error loading billers --</option>';
+    }
+  }
+}
+
+async function onExecuteBillerSelected() {
+  const billerId = String(getEl("executeBillerId")?.value || "").trim();
+  const paymentItemDropdown = getEl("executePaymentItemId");
+
+  if (!paymentItemDropdown) return;
+
+  if (!billerId) {
+    paymentItemDropdown.innerHTML = '<option value="">-- Select a biller first --</option>';
+    paymentItemDropdown.disabled = true;
+    return;
+  }
+
+  try {
+    paymentItemDropdown.innerHTML = '<option value="">Loading payment types...</option>';
+    paymentItemDropdown.disabled = true;
+
+    const response = await fetch(`${API_BASE}/api/bills/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ biller_id: Number(billerId) })
+    });
+    const data = await response.json();
+
+    if (!response.ok || data?.status === "error") {
+      paymentItemDropdown.innerHTML = '<option value="">-- Error loading payment types --</option>';
+      return;
+    }
+
+    const items = Array.isArray(data?.data) ? data.data : [];
+    
+    if (items.length === 0) {
+      paymentItemDropdown.innerHTML = '<option value="">-- No payment types available --</option>';
+      return;
+    }
+
+    let html = '<option value="">-- Select payment type --</option>';
+    items.forEach((item) => {
+      const code = item?.paymentCode || item?.code || "";
+      const name = item?.name || "Unknown";
+      if (code) {
+        html += `<option value="${escapeHtml(code)}">${escapeHtml(name)}</option>`;
+      }
+    });
+
+    paymentItemDropdown.innerHTML = html;
+    paymentItemDropdown.disabled = false;
+  } catch (err) {
+    console.error("Failed to load payment items:", err);
+    paymentItemDropdown.innerHTML = '<option value="">-- Error loading payment types --</option>';
+  }
+}
+
 async function confirmExecutePayment() {
   const customerId = String(getEl("executeCustomerId")?.value || "").trim();
   const amountRaw = String(getEl("executeAmount")?.value || "").trim();
-  const paymentCode = String(getEl("executePaymentCode")?.value || "").trim();
-  const amount = Number(amountRaw);
+  const paymentCode = String(getEl("executePaymentItemId")?.value || "").trim();
+  const amountNGN = Number(amountRaw);
+  const amountKobo = Math.round(amountNGN * 100);
 
   if (!customerId) {
     showToast("Enter customer ID.", "error");
     return;
   }
-  if (!Number.isFinite(amount) || amount <= 0) {
+  if (!Number.isFinite(amountNGN) || amountNGN <= 0) {
     showToast("Enter a valid amount.", "error");
     return;
   }
+  if (amountKobo < 20000) {
+    showToast("Minimum amount is ₦200.00", "error");
+    return;
+  }
+  if (!paymentCode) {
+    showToast("Select a payment type.", "error");
+    return;
+  }
 
-  setExecuteStatus("loading", "Processing payment...", "Calling Interswitch via /api/execute/pay");
+  setExecuteStatus("loading", "Validating customer...", "Step 1 of 2: Validate customer");
 
   try {
-    const response = await fetch(`${API_BASE}/api/execute/pay`, {
+    const validateRes = await fetch(`${API_BASE}/api/bills/validate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         customer_id: customerId,
-        amount,
-        payment_code: paymentCode || undefined,
-      }),
+        payment_code: paymentCode
+      })
     });
 
-    const payload = await response.json();
+    const validateData = await validateRes.json();
 
-    if (response.ok && payload?.success) {
-      const ref = payload?.reference || "N/A";
-      setExecuteStatus(
-        "success",
-        "Payment sent successfully.",
-        `Reference: ${ref} | Amount: NGN ${amount.toLocaleString("en-NG")}`
-      );
-      showToast("Payment executed successfully.");
+    if (!validateRes.ok || !validateData?.valid) {
+      const reason = validateData?.message || "Customer validation failed";
+      setExecuteStatus("error", "Validation failed.", reason);
+      showToast(reason, "error");
       return;
     }
 
-    if (isSandboxPendingResponse(payload)) {
+    setExecuteStatus("loading", "Processing payment...", "Step 2 of 2: Initiate payment");
+    await sleep(500);
+
+    const payRes = await fetch(`${API_BASE}/api/bills/pay`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        customer_id: customerId,
+        payment_code: paymentCode,
+        amount: amountKobo,
+        customer_mobile: "",
+        customer_email: ""
+      })
+    });
+
+    const payData = await payRes.json();
+
+    if (!payRes.ok) {
+      const reason = payData?.message || `Payment failed (${payRes.status})`;
+      setExecuteStatus("error", "Payment error.", reason);
+      showToast(reason, "error");
+      return;
+    }
+
+    const reference = payData?.reference || "N/A";
+    const responseCode = payData?.response_code || "Unknown";
+
+    if (responseCode === "90009") {
       setExecuteStatus(
         "pending",
-        "Sandbox pending.",
-        "Your app is waiting for endpoint entitlement. Please retry after Interswitch enables access."
+        "Payment initiated successfully.",
+        `Reference: ${reference} | Amount: ₦${amountNGN.toLocaleString("en-NG")} | Status: Processing`
       );
-      showToast("Sandbox pending.", "warning");
+      showToast(`Payment initiated. Reference: ${reference}`);
       return;
     }
 
-    const message = payload?.message || `Payment failed (${response.status})`;
-    setExecuteStatus("error", "Payment failed.", message);
-    showToast(message, "error");
+    if (responseCode === "90000") {
+      setExecuteStatus(
+        "success",
+        "Payment completed successfully.",
+        `Reference: ${reference} | Amount: ₦${amountNGN.toLocaleString("en-NG")}`
+      );
+      showToast("Payment completed successfully.");
+      return;
+    }
+
+    setExecuteStatus(
+      "warning",
+      "Payment status unclear.",
+      `Response: ${responseCode} | Reference: ${reference}`
+    );
+    showToast(`Payment processed with status: ${responseCode}`, "warning");
   } catch (err) {
     const msg = String(err?.message || "Network error");
     setExecuteStatus(
-      "pending",
-      "Sandbox pending.",
-      "Unable to complete live payment now. Please retry after entitlement is enabled."
+      "error",
+      "Network error.",
+      "Unable to complete payment. Check your connection and try again."
     );
-    showToast(`Sandbox pending: ${msg}`, "warning");
+    showToast(msg, "error");
   }
 }
 
@@ -1806,6 +2049,232 @@ function setupParallaxCards() {
   onScroll();
 }
 
+function setupInteractiveTiles() {
+  const tileEntries = [
+    {
+      selector: ".hero-card-a, .media-a, .flow-media-a, .story-1",
+      label: "Spending Pattern Pulse",
+      title: "Spending Pattern Pulse",
+      summary: "Your spend profile clusters around convenience and impulse windows, especially right after income inflow.",
+      points: [
+        "Highest risk window is typically within 72 hours of salary credit.",
+        "Recurring small debits are compounding faster than planned categories.",
+        "Pre-committing budget caps can reduce unplanned spend velocity."
+      ],
+      metricLabel: "Signal Strength",
+      metricValue: "High",
+      actionLabel: "Review patterns",
+      actionTarget: "resultsPanel",
+      fallbackTarget: "inputPanel",
+      fallbackMessage: "Run analysis first, then review your spending patterns."
+    },
+    {
+      selector: ".hero-card-b, .media-b, .flow-media-b, .story-2",
+      label: "Runway Pressure Map",
+      title: "Runway Pressure Map",
+      summary: "Liquidity pressure follows a predictable arc and can be surfaced early before balance stress intensifies.",
+      points: [
+        "Mid-cycle expenses are pulling runway down disproportionately.",
+        "Your fixed-cost density leaves limited buffer in low-cash weeks.",
+        "A weekly burn checkpoint materially improves forecast accuracy."
+      ],
+      metricLabel: "Runway Outlook",
+      metricValue: "Watch",
+      actionLabel: "Check runway",
+      actionTarget: "resultsPanel",
+      fallbackTarget: "inputPanel",
+      fallbackMessage: "Run analysis first to unlock runway and risk insights."
+    },
+    {
+      selector: ".hero-card-c, .media-c, .flow-media-c, .story-3",
+      label: "Savings Momentum Lens",
+      title: "Savings Momentum Lens",
+      summary: "Small repeatable behavior shifts produce the fastest score lift when applied consistently.",
+      points: [
+        "Automating micro-savings improves consistency more than one-off transfers.",
+        "Rounding-up spend events can create low-friction reserve growth.",
+        "Momentum increases when savings are triggered on income day."
+      ],
+      metricLabel: "Momentum Grade",
+      metricValue: "Building",
+      actionLabel: "Open actions",
+      actionTarget: "actionsCard",
+      fallbackTarget: "inputPanel",
+      fallbackMessage: "Run analysis first, then execute recommended actions."
+    }
+  ];
+
+  const layer = document.createElement("div");
+  layer.className = "tile-insight-layer hidden";
+  layer.innerHTML = `
+    <article class="tile-insight-card" role="dialog" aria-modal="true" aria-label="Tile insight" tabindex="-1">
+      <button class="tile-insight-close" type="button" aria-label="Close insight">
+        <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+      </button>
+      <p class="tile-insight-kicker">Insight</p>
+      <h4 class="tile-insight-title"></h4>
+      <p class="tile-insight-summary"></p>
+      <ul class="tile-insight-list"></ul>
+      <div class="tile-insight-metric">
+        <span class="tile-insight-metric-label"></span>
+        <strong class="tile-insight-metric-value"></strong>
+      </div>
+      <button class="tile-insight-action" type="button">
+        <i class="fa-solid fa-bolt" aria-hidden="true"></i>
+        <span class="tile-insight-action-label">Take action</span>
+      </button>
+    </article>
+  `;
+  document.body.appendChild(layer);
+
+  const card = layer.querySelector(".tile-insight-card");
+  const closeBtn = layer.querySelector(".tile-insight-close");
+  const titleEl = layer.querySelector(".tile-insight-title");
+  const summaryEl = layer.querySelector(".tile-insight-summary");
+  const listEl = layer.querySelector(".tile-insight-list");
+  const metricLabelEl = layer.querySelector(".tile-insight-metric-label");
+  const metricValueEl = layer.querySelector(".tile-insight-metric-value");
+  const actionBtn = layer.querySelector(".tile-insight-action");
+  const actionLabelEl = layer.querySelector(".tile-insight-action-label");
+  let activeTile = null;
+  let activeEntry = null;
+
+  const closeInsight = () => {
+    layer.classList.remove("is-open");
+    window.setTimeout(() => {
+      layer.classList.add("hidden");
+    }, 180);
+
+    if (activeTile) {
+      activeTile.setAttribute("aria-expanded", "false");
+      activeTile.focus({ preventScroll: true });
+      activeTile = null;
+    }
+
+    activeEntry = null;
+  };
+
+  const flashSection = (section) => {
+    section.classList.add("section-jump-highlight");
+    window.setTimeout(() => {
+      section.classList.remove("section-jump-highlight");
+    }, 1200);
+  };
+
+  const jumpToActionTarget = (entry) => {
+    const target = getEl(entry.actionTarget);
+    const fallback = getEl(entry.fallbackTarget || "inputPanel");
+
+    if (target && !target.classList.contains("hidden")) {
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+      flashSection(target);
+      closeInsight();
+      return;
+    }
+
+    if (fallback) {
+      fallback.scrollIntoView({ behavior: "smooth", block: "start" });
+      flashSection(fallback);
+    }
+
+    closeInsight();
+    if (entry.fallbackMessage) showToast(entry.fallbackMessage, "warning");
+  };
+
+  const placeCardNearTile = (tileRect) => {
+    const viewportW = window.innerWidth;
+    const viewportH = window.innerHeight;
+    const cardWidth = Math.min(360, viewportW - 24);
+    const cardHeight = 330;
+
+    let left = tileRect.right + 12;
+    let top = tileRect.top;
+
+    if (left + cardWidth > viewportW - 12) {
+      left = tileRect.left - cardWidth - 12;
+    }
+
+    if (left < 12) {
+      left = Math.max(12, (viewportW - cardWidth) / 2);
+    }
+
+    if (top + cardHeight > viewportH - 12) {
+      top = Math.max(12, viewportH - cardHeight - 12);
+    }
+
+    card.style.left = `${Math.round(left)}px`;
+    card.style.top = `${Math.round(top)}px`;
+  };
+
+  const openInsight = (tile, entry) => {
+    tile.classList.add("is-burst");
+    window.setTimeout(() => tile.classList.remove("is-burst"), 260);
+
+    titleEl.textContent = entry.title;
+    summaryEl.textContent = entry.summary;
+    listEl.innerHTML = entry.points.map((point) => `<li>${point}</li>`).join("");
+    metricLabelEl.textContent = entry.metricLabel;
+    metricValueEl.textContent = entry.metricValue;
+    actionLabelEl.textContent = entry.actionLabel || "Take action";
+
+    const rect = tile.getBoundingClientRect();
+    placeCardNearTile(rect);
+
+    layer.classList.remove("hidden");
+    requestAnimationFrame(() => {
+      layer.classList.add("is-open");
+      card.focus();
+    });
+
+    if (activeTile) activeTile.setAttribute("aria-expanded", "false");
+    activeTile = tile;
+    activeTile.setAttribute("aria-expanded", "true");
+    activeEntry = entry;
+  };
+
+  layer.addEventListener("click", (event) => {
+    if (event.target === layer) closeInsight();
+  });
+
+  closeBtn?.addEventListener("click", closeInsight);
+  actionBtn?.addEventListener("click", () => {
+    if (!activeEntry) return;
+    jumpToActionTarget(activeEntry);
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !layer.classList.contains("hidden")) {
+      closeInsight();
+    }
+  });
+
+  window.addEventListener("resize", () => {
+    if (!activeTile || layer.classList.contains("hidden")) return;
+    placeCardNearTile(activeTile.getBoundingClientRect());
+  });
+
+  const activateTile = (tile, entry) => openInsight(tile, entry);
+
+  tileEntries.forEach((entry) => {
+    const nodes = document.querySelectorAll(entry.selector);
+    nodes.forEach((tile) => {
+      tile.classList.add("interactive-tile");
+      tile.setAttribute("role", "button");
+      tile.setAttribute("tabindex", "0");
+      tile.setAttribute("aria-label", `${entry.label}. Click for insight.`);
+      tile.setAttribute("aria-expanded", "false");
+      tile.setAttribute("title", entry.label);
+
+      tile.addEventListener("click", () => activateTile(tile, entry));
+      tile.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        activateTile(tile, entry);
+      });
+    });
+  });
+}
+
 window.addEventListener("DOMContentLoaded", () => {
   updateThemeColorMeta();
   switchTab("sms");
@@ -1834,6 +2303,7 @@ window.addEventListener("DOMContentLoaded", () => {
   setupParallaxCards();
   setupBackgroundObjects();
   setupMouseHoverEffects();
+  setupInteractiveTiles();
 });
 
 // Ensure inline HTML handlers can call these methods reliably.

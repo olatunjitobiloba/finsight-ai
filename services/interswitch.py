@@ -253,7 +253,7 @@ def verify_bank_account(account_number: str, bank_code: str) -> dict:
             result = data.get("data", {})
             return {
                 "status": "success",
-                "account_name": result.get("accountName", ""),
+                "account_name": result.get("bankDetails", {}).get("accountName", ""),
                 "account_no": account_number,
                 "bank_code": bank_code,
                 "raw": result,

@@ -397,6 +397,7 @@ def verify_bank_account(account_number: str, bank_code: str) -> dict:
             or data.get("AccountName")
             or data.get("beneficiaryName")
             or data.get("BeneficiaryName")
+            or (data.get("bankDetails") or {}).get("accountName", "")
             or ""
         )
 

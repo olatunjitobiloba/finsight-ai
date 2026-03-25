@@ -5,6 +5,7 @@ from api.routes.analyze import router as analyze_router
 from api.routes.score import router as score_router
 from api.routes.health import router as health_router
 from api.routes.parse import router as parse_router
+from api.routes.execute import router as execute_router
 
 app = FastAPI(
     title="FinSight AI",
@@ -24,6 +25,7 @@ app.include_router(analyze_router)
 app.include_router(score_router)
 app.include_router(health_router)
 app.include_router(parse_router)
+app.include_router(execute_router)
 
 
 @app.get("/")
@@ -44,6 +46,9 @@ def root():
             "POST /api/savings/plan",
             "POST /api/savings/analyze",
             "POST /api/savings/bills/optimize",
+            "POST /api/execute/pay",
+            "GET /api/execute/billers",
+            "GET /api/execute/payment-items?biller_id=...",
             "GET /api/parse/banks",
             "GET /api/parse/demo"
         ],

@@ -1290,6 +1290,72 @@ body::after {
   flex-direction: column;
 }
 
+.execute-label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.execute-input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #ffffff;
+  color: var(--text);
+  padding: 11px 12px;
+  font-size: 0.9rem;
+}
+
+.execute-input:focus {
+  outline: none;
+  border-color: rgba(0, 208, 132, 0.55);
+  box-shadow: 0 0 0 3px rgba(0, 208, 132, 0.12);
+}
+
+.execute-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.execute-status {
+  margin-top: 6px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  font-size: 0.86rem;
+}
+
+.execute-status-title {
+  font-weight: 700;
+}
+
+.execute-status-detail {
+  margin-top: 4px;
+  color: var(--text-sub);
+}
+
+.execute-status.loading {
+  background: rgba(0, 208, 132, 0.08);
+  border-color: rgba(0, 208, 132, 0.22);
+}
+
+.execute-status.success {
+  background: rgba(0, 208, 132, 0.08);
+  border-color: rgba(0, 208, 132, 0.35);
+}
+
+.execute-status.pending {
+  background: rgba(251, 191, 36, 0.12);
+  border-color: rgba(251, 191, 36, 0.4);
+}
+
+.execute-status.error {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
 .modal-footer {
   display: flex;
   justify-content: flex-end;

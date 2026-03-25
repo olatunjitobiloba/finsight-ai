@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f8f4ee"/>
   <title>FinSight AI - Financial Decision Engine</title>
   <link rel="manifest" href="./manifest.json" />
-  <link rel="stylesheet" href="./assets/style.css?v=20260324c" />
+  <link rel="stylesheet" href="./assets/style.css?v=20260325a" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,700&display=swap" rel="stylesheet" />
@@ -366,6 +366,9 @@
             <span class="interswitch-sub">Execute actions through payments</span>
           </div>
           <div class="interswitch-actions">
+            <button class="btn btn-interswitch" onclick="openExecuteFlow()" type="button">
+              <i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Execute Fix Payment
+            </button>
             <button class="btn btn-interswitch" onclick="simulateSave()">
               <i class="fa-solid fa-money-bill-trend-up" aria-hidden="true"></i> Simulate Saving ₦5,000
             </button>
@@ -378,6 +381,32 @@
       </div>
     </section>
   </main>
+
+  <div class="modal hidden" id="executeModal" role="dialog" aria-modal="true" aria-labelledby="executeModalTitle">
+    <div class="modal-box">
+      <div class="modal-title" id="executeModalTitle">Execute Fix Payment</div>
+      <div class="modal-sub">Enter customer ID and amount, then confirm. If sandbox entitlement is pending, we will show that clearly.</div>
+
+      <label for="executeCustomerId" class="execute-label">Customer ID</label>
+      <input id="executeCustomerId" class="execute-input" type="text" placeholder="Phone, smartcard, or meter number" autocomplete="off" />
+
+      <label for="executeAmount" class="execute-label">Amount (NGN)</label>
+      <input id="executeAmount" class="execute-input" type="number" min="1" step="0.01" placeholder="500" />
+
+      <label for="executePaymentCode" class="execute-label">Payment Code (optional now, required after entitlement)</label>
+      <input id="executePaymentCode" class="execute-input" type="text" placeholder="e.g. 10901" autocomplete="off" />
+
+      <div class="execute-actions">
+        <button class="btn btn-primary" onclick="confirmExecutePayment()" type="button">
+          <i class="fa-solid fa-check" aria-hidden="true"></i>
+          Confirm Payment
+        </button>
+        <button class="btn btn-ghost" onclick="closeExecuteFlow(true)" type="button">Cancel</button>
+      </div>
+
+      <div class="execute-status hidden" id="executeStatus"></div>
+    </div>
+  </div>
 
   <!-- Auth Modal -->
   <div class="modal hidden" id="authModal" role="dialog" aria-modal="true" aria-labelledby="authModalTitle">
@@ -434,6 +463,6 @@
 
   <div class="toast hidden" id="toast"></div>
 
-  <script src="./assets/app.js?v=20260324c"></script>
+  <script src="./assets/app.js?v=20260325a"></script>
 </body>
 </html>

@@ -658,6 +658,137 @@ function setupAuthModalBehavior() {
   });
 }
 
+function setupExecuteModalBehavior() {
+  const modal = getEl("executeModal");
+  if (!modal) return;
+
+  modal.addEventListener("click", (event) => {
+    if (event.target === modal) {
+      closeExecuteFlow(false);
+    }
+  });
+}
+
+function openExecuteFlow() {
+  const modal = getEl("executeModal");
+  if (!modal) return;
+
+  const amountInput = getEl("executeAmount");
+  if (amountInput && !amountInput.value) {
+    amountInput.value = "500";
+  }
+
+  const status = getEl("executeStatus");
+  if (status) {
+    status.className = "execute-status hidden";
+    status.innerHTML = "";
+  }
+
+  modal.classList.remove("hidden");
+}
+
+function closeExecuteFlow(clearFields = false) {
+  const modal = getEl("executeModal");
+  if (!modal) return;
+
+  modal.classList.add("hidden");
+
+  if (clearFields) {
+    const customer = getEl("executeCustomerId");
+    const amount = getEl("executeAmount");
+    const paymentCode = getEl("executePaymentCode");
+    if (customer) customer.value = "";
+    if (amount) amount.value = "";
+    if (paymentCode) paymentCode.value = "";
+  }
+}
+
+function setExecuteStatus(kind, message, details = "") {
+  const status = getEl("executeStatus");
+  if (!status) return;
+
+  status.className = `execute-status ${kind}`;
+  status.classList.remove("hidden");
+  status.innerHTML = `
+    <div class="execute-status-title">${message}</div>
+    ${details ? `<div class="execute-status-detail">${details}</div>` : ""}
+  `;
+}
+
+function isSandboxPendingResponse(payload) {
+  const message = String(payload?.message || payload?.provider_message || "").toLowerCase();
+  return payload?.status === "sandbox_pending"
+    || message.includes("access denied")
+    || message.includes("permission")
+    || message.includes("entitle")
+    || message.includes("unauthorized");
+}
+
+async function confirmExecutePayment() {
+  const customerId = String(getEl("executeCustomerId")?.value || "").trim();
+  const amountRaw = String(getEl("executeAmount")?.value || "").trim();
+  const paymentCode = String(getEl("executePaymentCode")?.value || "").trim();
+  const amount = Number(amountRaw);
+
+  if (!customerId) {
+    showToast("Enter customer ID.", "error");
+    return;
+  }
+  if (!Number.isFinite(amount) || amount <= 0) {
+    showToast("Enter a valid amount.", "error");
+    return;
+  }
+
+  setExecuteStatus("loading", "Processing payment...", "Calling Interswitch via /api/execute/pay");
+
+  try {
+    const response = await fetch(`${API_BASE}/api/execute/pay`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        customer_id: customerId,
+        amount,
+        payment_code: paymentCode || undefined,
+      }),
+    });
+
+    const payload = await response.json();
+
+    if (response.ok && payload?.success) {
+      const ref = payload?.reference || "N/A";
+      setExecuteStatus(
+        "success",
+        "Payment sent successfully.",
+        `Reference: ${ref} | Amount: NGN ${amount.toLocaleString("en-NG")}`
+      );
+      showToast("Payment executed successfully.");
+      return;
+    }
+
+    if (isSandboxPendingResponse(payload)) {
+      setExecuteStatus(
+        "pending",
+        "Sandbox pending.",
+        "Your app is waiting for endpoint entitlement. Please retry after Interswitch enables access."
+      );
+      showToast("Sandbox pending.", "warning");
+      return;
+    }
+
+    const message = payload?.message || `Payment failed (${response.status})`;
+    setExecuteStatus("error", "Payment failed.", message);
+    showToast(message, "error");
+  } catch (err) {
+    const msg = String(err?.message || "Network error");
+    setExecuteStatus(
+      "pending",
+      "Sandbox pending.",
+      "Unable to complete live payment now. Please retry after entitlement is enabled."
+    );
+    showToast(`Sandbox pending: ${msg}`, "warning");
+  }
+}
+
 async function signInWithGoogle() {
   if (!window.supabase?.auth) {
     showToast("Supabase is not configured.", "error");
@@ -1207,6 +1338,7 @@ window.addEventListener("DOMContentLoaded", () => {
   }
 
   setupAuthModalBehavior();
+  setupExecuteModalBehavior();
 
   setupPageTransitions();
   setupBrandMarkTilt();
@@ -1228,6 +1360,9 @@ window.analyzeNow = analyzeNow;
 window.analyzeCSV = analyzeCSV;
 window.analyzePDF = analyzePDF;
 window.fixThis = fixThis;
+window.openExecuteFlow = openExecuteFlow;
+window.closeExecuteFlow = closeExecuteFlow;
+window.confirmExecutePayment = confirmExecutePayment;
 window.simulateSave = simulateSave;
 window.simulateBill = simulateBill;
 window.signInWithGoogle = signInWithGoogle;

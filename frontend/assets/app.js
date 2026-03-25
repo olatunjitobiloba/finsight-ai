@@ -1171,10 +1171,21 @@ async function openBankVerifyFlow() {
           dropdown.appendChild(opt);
         });
       } else {
-        dropdown.innerHTML = '<option value="">Error loading banks</option>';
+        dropdown.innerHTML = '<option value="">Bank list unavailable</option>';
+        const reason = String(data?.message || `Request failed (${response.status})`).trim();
+        setBankVerifyStatus(
+          "pending",
+          "Unable to load banks right now.",
+          reason
+        );
       }
     } catch (err) {
       dropdown.innerHTML = '<option value="">Network error</option>';
+      setBankVerifyStatus(
+        "pending",
+        "Network error while loading banks.",
+        String(err?.message || "Check your connection and try again.")
+      );
     }
   }
 

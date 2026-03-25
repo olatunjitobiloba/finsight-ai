@@ -1,6 +1,6 @@
 // FinSight AI — Service Worker
 
-const CACHE_NAME = "finsight-v3";
+const CACHE_NAME = "finsight-v4";
 
 const STATIC_ASSETS = [
   "./",
@@ -39,6 +39,20 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   // API calls — network only, no cache
   if (event.request.url.includes("/api/")) {
+    return;
+  }
+
+  // Keep JS/CSS fresh so frontend fixes propagate without manual cache clears.
+  if (event.request.destination === "script" || event.request.destination === "style") {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          const responseClone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone));
+          return response;
+        })
+        .catch(() => caches.match(event.request))
+    );
     return;
   }
 

@@ -6,7 +6,7 @@ from typing import Optional
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from services.interswitch import get_billers, get_payment_items, pay_bill
+from services.interswitch import get_billers, get_default_payment_code, get_payment_items, pay_bill
 
 router = APIRouter(prefix="/api/execute", tags=["execute"])
 
@@ -20,19 +20,29 @@ class ExecutePaymentRequest(BaseModel):
 
 def _is_sandbox_pending(message: str) -> bool:
     text = (message or "").lower()
-    return any(token in text for token in ["access denied", "permission", "entitle", "unauthorized"])
+    return any(token in text for token in [
+        "access denied",
+        "permission",
+        "entitle",
+        "unauthorized",
+        "forbidden",
+        "bad credentials",
+        "invalid client",
+        "terminal",
+        "merchant",
+    ])
 
 
 @router.post("/pay")
 async def execute_fix_payment(request: ExecutePaymentRequest):
     """Execute a bill payment for an action with sandbox-pending fallback."""
-    payment_code = (request.payment_code or os.getenv("INTERSWITCH_DEFAULT_PAYMENT_CODE", "")).strip()
+    payment_code = (request.payment_code or get_default_payment_code() or os.getenv("INTERSWITCH_DEFAULT_PAYMENT_CODE", "")).strip()
 
     if not payment_code:
         return {
             "success": False,
             "status": "sandbox_pending",
-            "message": "Sandbox pending: payment code is not available yet. Add entitlement and fetch paymentCode from /vas/billers/payment-item.",
+            "message": "Sandbox pending: payment code is not available yet. Fetch paymentCode from /api/execute/payment-items after selecting a biller.",
         }
 
     result = pay_bill(
@@ -108,3 +118,60 @@ async def execute_payment_items(biller_id: int):
         }
 
     return {"success": False, "status": "failed", "message": message}
+
+
+@router.get("/status")
+async def execute_status():
+    """Quick diagnostic endpoint for Interswitch credential/setup readiness."""
+    client_id = (os.getenv("INTERSWITCH_CLIENT_ID") or "").strip()
+    client_secret = (
+        os.getenv("INTERSWITCH_CLIENT_SECRET")
+        or os.getenv("INTERSWITCH_SECRET_KEY")
+        or os.getenv("INTERSWITCH_SECRET")
+        or ""
+    ).strip()
+    terminal_id = (os.getenv("INTERSWITCH_TERMINAL_ID") or "3PBL0001").strip()
+    payment_code = (get_default_payment_code() or "").strip()
+
+    checks = {
+        "client_id_present": bool(client_id),
+        "client_secret_present": bool(client_secret),
+        "terminal_id_present": bool(terminal_id),
+        "default_payment_code_present": bool(payment_code),
+    }
+
+    if not checks["client_id_present"] or not checks["client_secret_present"]:
+        return {
+            "success": False,
+            "status": "misconfigured",
+            "message": "Interswitch credentials are missing. Set INTERSWITCH_CLIENT_ID and INTERSWITCH_CLIENT_SECRET.",
+            "checks": checks,
+        }
+
+    try:
+        result = get_billers()
+    except Exception as exc:
+        return {
+            "success": False,
+            "status": "failed",
+            "message": str(exc),
+            "checks": checks,
+        }
+
+    if result.get("status") == "success":
+        return {
+            "success": True,
+            "status": "ok",
+            "message": "Interswitch credentials and billers endpoint are reachable.",
+            "checks": checks,
+            "sample_billers_count": len(result.get("data", [])),
+        }
+
+    message = result.get("message", "Unknown error")
+    pending = _is_sandbox_pending(message)
+    return {
+        "success": False,
+        "status": "sandbox_pending" if pending else "failed",
+        "message": message,
+        "checks": checks,
+    }

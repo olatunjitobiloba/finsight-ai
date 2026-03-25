@@ -51,6 +51,7 @@ def root():
             "POST /api/execute/pay",
             "GET /api/execute/billers",
             "GET /api/execute/payment-items?biller_id=...",
+            "GET /api/execute/status",
             "GET /api/bank-verify/banks",
             "POST /api/bank-verify/verify",
             "GET /api/parse/banks",

@@ -10,6 +10,7 @@
 from datetime import date, datetime, timedelta
 from collections import defaultdict
 from typing import Optional
+from statistics import median
 import re
 
 from services.ai_actions import generate_genuine_actions
@@ -61,7 +62,11 @@ def calculate_score(transactions: list) -> dict:
     # ── PILLAR 2: Spending Control (25 pts)
     # spending < income = good
     spending_score = _score_spending_control(
-        total_income, total_spending
+        credits,
+        debits,
+        total_income,
+        total_spending,
+        income_score,
     )
 
     # ── PILLAR 3: Savings Behavior (20 pts)
@@ -125,25 +130,88 @@ def _score_income_stability(credits: list) -> float:
     return 10.0  # single income
 
 
-def _score_spending_control(income: float, spending: float) -> float:
-    """25 pts max. Rewards spending well below income."""
-    if income == 0:
-        return 0.0
-    ratio = spending / income  # 0.5 = spent 50% of income
+def _extract_month(value: str) -> Optional[str]:
+    """Extract YYYY-MM bucket from transaction date text."""
+    if not value:
+        return None
+    text = str(value)
+    if re.match(r"^\d{4}-\d{2}", text):
+        return text[:7]
+    return None
+
+
+def _score_spending_control(
+    credits: list,
+    debits: list,
+    income: float,
+    spending: float,
+    income_stability_score: float,
+) -> float:
+    """25 pts max. Uses rolling ratios so one-off income months are less punitive."""
+    if spending <= 0:
+        return 25.0
+
+    monthly_income = defaultdict(float)
+    monthly_spending = defaultdict(float)
+
+    for t in credits:
+        month = _extract_month(t.get("transaction_date"))
+        if month:
+            monthly_income[month] += t.get("amount", 0)
+
+    for t in debits:
+        month = _extract_month(t.get("transaction_date"))
+        if month:
+            monthly_spending[month] += t.get("amount", 0)
+
+    months = sorted(set(monthly_income.keys()) | set(monthly_spending.keys()))
+    ratios = [
+        monthly_spending[m] / monthly_income[m]
+        for m in months
+        if monthly_income[m] > 0
+    ]
+
+    baseline_ratio = median(ratios) if ratios else (spending / income if income > 0 else None)
+
+    current_ratio = None
+    if months:
+        latest_month = months[-1]
+        latest_income = monthly_income.get(latest_month, 0.0)
+        latest_spending = monthly_spending.get(latest_month, 0.0)
+        if latest_income > 0:
+            current_ratio = latest_spending / latest_income
+    elif income > 0:
+        current_ratio = spending / income
+
+    if current_ratio is None:
+        if baseline_ratio is None:
+            return 0.0
+        no_income_penalty = 0.15 if income_stability_score >= 18 else 0.25
+        ratio = baseline_ratio * (1 + no_income_penalty)
+    else:
+        # Stable inflow gets more smoothing from historical monthly behavior.
+        smoothing = min(0.45, max(0.1, (income_stability_score / 25.0) * 0.45))
+        reference_ratio = baseline_ratio if baseline_ratio is not None else current_ratio
+        ratio = (current_ratio * (1 - smoothing)) + (reference_ratio * smoothing)
+
     if ratio <= 0.35:
         return 25.0
     if ratio <= 0.5:
-        return 15.0
+        return 18.0
     if ratio <= 0.7:
-        return 10.0
+        return 13.0
     if ratio <= 0.9:
-        return 5.0
+        return 9.0
     if ratio <= 1.0:
-        return 2.0
+        return 8.0
     if ratio <= 1.1:
-        return 1.0
+        return 6.0
     if ratio <= 1.25:
-        return 0.5
+        return 4.0
+    if ratio <= 1.5:
+        return 2.0
+    if ratio <= 1.75:
+        return 1.0
     return 0.0
 
 

@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#f8f4ee" />
+  <meta name="description" content="FinSight AI authentication" />
+  <title>FinSight AI - Login</title>
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="icon" type="image/svg+xml" href="./assets/logo-mark.svg?v=20260326d" />
+  <link rel="stylesheet" href="./assets/style.css?v=20260326d" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    .login-shell {
+      min-height: 100dvh;
+      display: grid;
+      place-items: center;
+      padding: 28px 16px;
+      background: radial-gradient(circle at 0% 0%, rgba(233, 142, 74, 0.14), transparent 42%),
+                  radial-gradient(circle at 100% 0%, rgba(71, 32, 28, 0.12), transparent 40%),
+                  #f8f4ee;
+    }
+    .login-card {
+      width: min(560px, 100%);
+      background: rgba(255, 250, 244, 0.95);
+      border: 1px solid rgba(71, 32, 28, 0.18);
+      border-radius: 22px;
+      padding: 26px;
+      box-shadow: 0 18px 60px rgba(71, 32, 28, 0.12);
+    }
+    .login-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .login-brand img {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+    }
+    .login-title {
+      font-family: "Sora", sans-serif;
+      font-size: 1.42rem;
+      font-weight: 700;
+      color: #2f1712;
+      margin-bottom: 8px;
+    }
+    .login-sub {
+      color: #6d5144;
+      font-size: 0.95rem;
+      margin-bottom: 18px;
+    }
+    .login-grid {
+      display: grid;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .login-label {
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      color: #59382d;
+      text-transform: uppercase;
+      margin-bottom: 5px;
+      display: block;
+    }
+    .login-input {
+      width: 100%;
+      border: 1px solid rgba(71, 32, 28, 0.26);
+      border-radius: 12px;
+      padding: 11px 12px;
+      font-size: 0.95rem;
+      background: #fff;
+      color: #2f1712;
+    }
+    .login-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 8px;
+    }
+    .login-status {
+      margin-top: 14px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      font-size: 0.9rem;
+      background: rgba(71, 32, 28, 0.08);
+      color: #46201c;
+      border: 1px solid rgba(71, 32, 28, 0.2);
+    }
+    .login-status.error {
+      color: #8f1f1f;
+      background: rgba(239, 68, 68, 0.12);
+      border-color: rgba(239, 68, 68, 0.28);
+    }
+    .login-session {
+      margin-top: 18px;
+      padding-top: 14px;
+      border-top: 1px dashed rgba(71, 32, 28, 0.25);
+      display: grid;
+      gap: 10px;
+    }
+    .login-session.hidden {
+      display: none;
+    }
+    .login-email {
+      font-weight: 700;
+      color: #2f1712;
+    }
+  </style>
+</head>
+<body class="cleo-mode">
+  <main class="login-shell">
+    <section class="login-card" aria-labelledby="loginTitle">
+      <div class="login-brand">
+        <img src="./assets/logo-mark.svg?v=20260326d" alt="FinSight logo" />
+        <strong>FinSight AI</strong>
+      </div>
+      <h1 id="loginTitle" class="login-title">Sign in to continue</h1>
+      <p class="login-sub">Use Google authentication for protected actions and history. If auth is not yet configured, add your Supabase project URL and anon key below.</p>
+
+      <div class="login-grid">
+        <div>
+          <label class="login-label" for="sbUrl">Supabase URL</label>
+          <input id="sbUrl" class="login-input" type="url" placeholder="https://your-project.supabase.co" autocomplete="off" />
+        </div>
+        <div>
+          <label class="login-label" for="sbAnon">Supabase Anon Key</label>
+          <input id="sbAnon" class="login-input" type="text" placeholder="eyJ..." autocomplete="off" />
+        </div>
+      </div>
+
+      <div class="login-actions">
+        <button class="btn btn-ghost" id="saveConfigBtn" type="button">Save Auth Config</button>
+        <button class="btn btn-primary" id="googleLoginBtn" type="button">Sign in with Google</button>
+        <a class="btn btn-ghost" href="./dashboard.html">Back to Dashboard</a>
+      </div>
+
+      <div class="login-status" id="loginStatus">Checking authentication state...</div>
+
+      <div class="login-session hidden" id="sessionPanel">
+        <div>Signed in as <span class="login-email" id="sessionEmail">-</span></div>
+        <div class="login-actions">
+          <button class="btn btn-primary" id="continueBtn" type="button">Continue to Dashboard</button>
+          <button class="btn btn-ghost" id="signOutBtn" type="button">Sign out</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./assets/auth.js?v=20260326d"></script>
+  <script>
+    (function initLoginPage() {
+      const statusEl = document.getElementById("loginStatus");
+      const emailEl = document.getElementById("sessionEmail");
+      const sessionPanel = document.getElementById("sessionPanel");
+      const sbUrlEl = document.getElementById("sbUrl");
+      const sbAnonEl = document.getElementById("sbAnon");
+      const continueBtn = document.getElementById("continueBtn");
+      const nextParam = new URLSearchParams(window.location.search).get("next") || "./dashboard.html";
+
+      function setStatus(message, kind) {
+        statusEl.textContent = message;
+        statusEl.className = kind === "error" ? "login-status error" : "login-status";
+      }
+
+      function targetPath() {
+        return nextParam || "./dashboard.html";
+      }
+
+      async function renderSession() {
+        if (!window.finsightAuth) {
+          setStatus("Auth bootstrap failed to load.", "error");
+          return;
+        }
+
+        const config = window.finsightAuth.getConfig();
+        if (config.url && !sbUrlEl.value) sbUrlEl.value = config.url;
+        if (config.anonKey && !sbAnonEl.value) sbAnonEl.value = config.anonKey;
+
+        const session = await window.finsightAuth.getSession();
+        if (!session) {
+          sessionPanel.classList.add("hidden");
+          if (config.configured) {
+            setStatus("Ready to sign in with Google.");
+          } else {
+            setStatus("Supabase auth is not configured yet. Save URL + anon key first.", "error");
+          }
+          return;
+        }
+
+        sessionPanel.classList.remove("hidden");
+        emailEl.textContent = session.user?.email || "Unknown user";
+        setStatus("You are signed in.");
+      }
+
+      document.getElementById("saveConfigBtn").addEventListener("click", async () => {
+        const url = sbUrlEl.value.trim();
+        const anon = sbAnonEl.value.trim();
+
+        if (!url || !anon) {
+          setStatus("Both Supabase URL and anon key are required.", "error");
+          return;
+        }
+
+        window.finsightAuth.persistConfig(url, anon);
+        const init = window.finsightAuth.initializeClient();
+        if (!init.ok) {
+          setStatus(init.message || "Unable to initialize auth.", "error");
+          return;
+        }
+
+        setStatus("Auth config saved.");
+        await renderSession();
+      });
+
+      document.getElementById("googleLoginBtn").addEventListener("click", async () => {
+        if (!window.finsightAuth) {
+          setStatus("Auth bootstrap missing.", "error");
+          return;
+        }
+
+        const config = window.finsightAuth.getConfig();
+        if (!config.configured) {
+          setStatus("Save Supabase URL and anon key first.", "error");
+          return;
+        }
+
+        const redirectTo = window.location.href.split("#")[0];
+        const { error } = await window.finsightAuth.signInWithGoogle(redirectTo, targetPath());
+        if (error) {
+          setStatus(`Google sign-in failed: ${error.message}`, "error");
+        }
+      });
+
+      continueBtn.addEventListener("click", () => {
+        const next = window.finsightAuth.consumeNextPath(targetPath());
+        window.location.href = next;
+      });
+
+      document.getElementById("signOutBtn").addEventListener("click", async () => {
+        const { error } = await window.finsightAuth.signOut();
+        if (error) {
+          setStatus(`Sign-out failed: ${error.message}`, "error");
+          return;
+        }
+        setStatus("Signed out successfully.");
+        await renderSession();
+      });
+
+      renderSession();
+    })();
+  </script>
+</body>
+</html>

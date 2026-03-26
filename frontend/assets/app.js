@@ -27,6 +27,8 @@ let activeTab = "sms";
 let currentPillarExplanations = {};
 let currentPillarWhyLines = {};
 
+const AUTH_PENDING_ACTION_KEY = "finsight.pending.action";
+
 const PILLAR_KEYS = [
   "income_stability",
   "spending_control",
@@ -1039,10 +1041,46 @@ function renderActions(actions) {
 async function requireAuth(actionFn) {
   const session = await getSupabaseSession();
   if (!session) {
+    if (!window.finsightAuth?.getConfig?.().configured) {
+      queuePendingAuthAction(actionFn);
+      goToLogin();
+      return;
+    }
     showAuthModal(actionFn);
     return;
   }
   await actionFn();
+}
+
+function queuePendingAuthAction(actionFn) {
+  const name = String(actionFn?.name || "").trim();
+  const mapped = name === "_doSave"
+    ? "simulateSave"
+    : (name === "_doBill" ? "simulateBill" : "");
+  if (mapped) {
+    sessionStorage.setItem(AUTH_PENDING_ACTION_KEY, mapped);
+  }
+}
+
+function goToLogin() {
+  const next = `${window.location.pathname.split("/").pop() || "dashboard.html"}${window.location.search || ""}`;
+  window.location.href = `./login.html?next=${encodeURIComponent(next)}`;
+}
+
+async function runPendingAuthActionIfAny() {
+  const actionName = sessionStorage.getItem(AUTH_PENDING_ACTION_KEY);
+  if (!actionName) return;
+
+  const session = await getSupabaseSession();
+  if (!session) return;
+
+  sessionStorage.removeItem(AUTH_PENDING_ACTION_KEY);
+  const action = window[actionName];
+  if (typeof action === "function") {
+    action().catch(() => {
+      showToast("Signed in, but we could not resume the previous action.", "warning");
+    });
+  }
 }
 
 function showAuthModal(pendingAction) {
@@ -1547,20 +1585,28 @@ async function confirmBankVerify() {
 }
 
 async function signInWithGoogle() {
-  if (!window.supabase?.auth) {
-    showToast("Supabase is not configured.", "error");
+  if (!window.finsightAuth) {
+    showToast("Auth bootstrap is not loaded.", "error");
     return;
   }
 
-  const { error } = await window.supabase.auth.signInWithOAuth({
-    provider: "google",
-    options: { redirectTo: window.location.href }
-  });
+  const config = window.finsightAuth.getConfig();
+  if (!config.configured) {
+    showToast("Open login page to configure Supabase first.", "warning");
+    goToLogin();
+    return;
+  }
+
+  const redirectTo = window.location.href.split("#")[0];
+  const { error } = await window.finsightAuth.signInWithGoogle(redirectTo, "./dashboard.html");
 
   if (error) showToast(`Sign-in failed: ${error.message}`, "error");
 }
 
 async function getSupabaseSession() {
+  if (window.finsightAuth?.getSession) {
+    return window.finsightAuth.getSession();
+  }
   if (!window.supabase?.auth) return null;
   const { data } = await window.supabase.auth.getSession();
   return data?.session || null;
@@ -2318,8 +2364,16 @@ window.addEventListener("DOMContentLoaded", () => {
           showToast("Unable to continue action after sign-in.", "error");
         });
       }
+
+      runPendingAuthActionIfAny().catch(() => {
+        // no-op
+      });
     });
   }
+
+  runPendingAuthActionIfAny().catch(() => {
+    // no-op
+  });
 
   setupAuthModalBehavior();
   setupExecuteModalBehavior();
@@ -2357,6 +2411,7 @@ window.onBankSelected = onBankSelected;
 window.simulateSave = simulateSave;
 window.simulateBill = simulateBill;
 window.signInWithGoogle = signInWithGoogle;
+window.goToLogin = goToLogin;
 window.closeAuthModal = closeAuthModal;
 window.showHistoryModal = showHistoryModal;
 window.closeHistoryModal = closeHistoryModal;

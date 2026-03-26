@@ -29,6 +29,33 @@ _token_cache = {
     "profile_expires_at": 0,
 }
 
+NIGERIAN_BANKS = [
+    {"code": "044", "name": "Access Bank"},
+    {"code": "023", "name": "Citibank"},
+    {"code": "050", "name": "Ecobank"},
+    {"code": "011", "name": "First Bank"},
+    {"code": "214", "name": "First City Monument Bank"},
+    {"code": "058", "name": "Guaranty Trust Bank"},
+    {"code": "030", "name": "Heritage Bank"},
+    {"code": "301", "name": "Jaiz Bank"},
+    {"code": "082", "name": "Keystone Bank"},
+    {"code": "526", "name": "Moniepoint MFB"},
+    {"code": "076", "name": "Polaris Bank"},
+    {"code": "101", "name": "Providus Bank"},
+    {"code": "221", "name": "Stanbic IBTC"},
+    {"code": "068", "name": "Standard Chartered"},
+    {"code": "232", "name": "Sterling Bank"},
+    {"code": "100", "name": "Suntrust Bank"},
+    {"code": "032", "name": "Union Bank"},
+    {"code": "033", "name": "United Bank for Africa"},
+    {"code": "215", "name": "Unity Bank"},
+    {"code": "035", "name": "Wema Bank"},
+    {"code": "057", "name": "Zenith Bank"},
+    {"code": "627", "name": "Opay"},
+    {"code": "090405", "name": "PalmPay"},
+    {"code": "000026", "name": "Kuda Bank"},
+]
+
 
 def _request_with_retry(
     method: str,
@@ -559,7 +586,29 @@ def check_transaction(request_reference: str) -> dict:
 
 def get_bank_list() -> dict:
     """Fetch list of banks and corresponding bank codes."""
-    url = f"{QUICKTELLER_URL}/banks"
+    url = f"{QUICKTELLER_URL}/financialinstitutions/banks"
+
+    def _normalize_bank(bank: dict) -> dict:
+        if not isinstance(bank, dict):
+            return {}
+        code = str(
+            bank.get("code")
+            or bank.get("bankCode")
+            or bank.get("institutionCode")
+            or bank.get("cbnCode")
+            or ""
+        ).strip()
+        name = str(
+            bank.get("name")
+            or bank.get("bankName")
+            or bank.get("institutionName")
+            or bank.get("displayName")
+            or ""
+        ).strip()
+        if not code or not name:
+            return {}
+        return {"code": code, "name": name}
+
     try:
         # Bank list is served by Quickteller, not the Verify identity API.
         logging.warning("[get_bank_list] Calling URL: %s", url)
@@ -575,15 +624,24 @@ def get_bank_list() -> dict:
         logging.warning("[get_bank_list] Raw response preview: %s", response.text[:500])
         response.raise_for_status()
         data = response.json()
+        banks = []
         if isinstance(data, list):
-            return {"status": "success", "banks": data, "resolved_url": url}
-        if isinstance(data, dict):
-            return {
-                "status": "success",
-                "banks": data.get("data") or data.get("banks") or [],
-                "resolved_url": url,
-            }
-        return {"status": "success", "banks": [], "resolved_url": url}
+            banks = data
+        elif isinstance(data, dict):
+            banks = data.get("data") or data.get("banks") or []
+
+        normalized = [_normalize_bank(bank) for bank in banks]
+        normalized = [bank for bank in normalized if bank]
+        if normalized:
+            return {"status": "success", "banks": normalized, "resolved_url": url, "source": "interswitch"}
+
+        logging.warning("[get_bank_list] No usable banks in provider response, using fallback list")
+        return {
+            "status": "success",
+            "banks": NIGERIAN_BANKS,
+            "resolved_url": url,
+            "source": "fallback",
+        }
     except httpx.HTTPStatusError as e:
         response_text = ""
         status_code = None
@@ -593,18 +651,22 @@ def get_bank_list() -> dict:
 
         logging.warning("[get_bank_list] HTTP error status=%s body=%s", status_code, response_text)
         return {
-            "status": "error",
+            "status": "success",
             "message": _parse_error_message(e.response),
+            "banks": NIGERIAN_BANKS,
             "resolved_url": url,
             "status_code": status_code,
             "response_preview": response_text,
+            "source": "fallback",
         }
     except Exception as e:
         logging.warning("[get_bank_list] Exception: %s", str(e))
         return {
-            "status": "error",
+            "status": "success",
             "message": str(e),
+            "banks": NIGERIAN_BANKS,
             "resolved_url": url,
+            "source": "fallback",
         }
 
 

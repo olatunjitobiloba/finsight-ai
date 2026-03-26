@@ -200,11 +200,18 @@ async def execute_banks():
     """Backward-compatible bank list endpoint for older execute flows."""
     result = get_bank_list()
     if result.get("status") == "success":
-        return {
+        response = {
             "success": True,
             "status": "success",
             "data": result.get("banks", []),
         }
+        if result.get("source"):
+            response["source"] = result.get("source")
+        if result.get("message"):
+            response["message"] = result.get("message")
+        if result.get("resolved_url"):
+            response["resolved_url"] = result.get("resolved_url")
+        return response
 
     message = result.get("message", "Failed to fetch banks")
     if _is_sandbox_pending(message):

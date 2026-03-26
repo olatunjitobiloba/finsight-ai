@@ -20,7 +20,12 @@ VERIFY_BASE_URL = os.getenv(
 BASE_URL = os.getenv("INTERSWITCH_BASE_URL", VERIFY_BASE_URL)
 TERMINAL_ID = os.getenv("INTERSWITCH_TERMINAL_ID", "3DMO0001")
 
-_token_cache = {"token": None, "expires_at": 0}
+_token_cache = {
+    "token": None,
+    "expires_at": 0,
+    "profile_token": None,
+    "profile_expires_at": 0,
+}
 
 
 def _env(*names: str) -> str:
@@ -102,7 +107,7 @@ def get_access_token(force_refresh: bool = False) -> str:
         raise RuntimeError(f"Interswitch auth error: {str(e)}") from e
 
 
-def get_name_inquiry_token() -> str:
+def get_name_inquiry_token(force_refresh: bool = False) -> str:
     """Get access token specifically scoped for Send Money / Name Inquiry."""
     client_id = _env("INTERSWITCH_CLIENT_ID", "INTERSWITCH_API_CLIENT_ID")
     client_secret = _env(
@@ -117,6 +122,9 @@ def get_name_inquiry_token() -> str:
             "INTERSWITCH_CLIENT_ID and INTERSWITCH_CLIENT_SECRET/INTERSWITCH_SECRET "
             "must be set as environment variables."
         )
+
+    if not force_refresh and _token_cache["profile_token"] and time.time() < _token_cache["profile_expires_at"] - 60:
+        return _token_cache["profile_token"]
 
     credentials = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
     response = httpx.post(
@@ -134,7 +142,9 @@ def get_name_inquiry_token() -> str:
     )
     response.raise_for_status()
     data = response.json()
-    return data["access_token"]
+    _token_cache["profile_token"] = data["access_token"]
+    _token_cache["profile_expires_at"] = time.time() + data.get("expires_in", 1799)
+    return _token_cache["profile_token"]
 
 
 def _auth_headers(force_refresh: bool = False) -> dict:
@@ -460,19 +470,29 @@ def verify_bank_account(account_number: str, bank_code: str) -> dict:
             "accountNumber": account_number,
             "bankCode": bank_code,
         }
+        token = get_name_inquiry_token()
 
         response = httpx.post(
             url,
-            headers=_auth_headers(),
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
             json=payload,
             timeout=15,
         )
 
         # Token may be stale; force refresh once on unauthorized.
         if response.status_code == 401:
+            token = get_name_inquiry_token(force_refresh=True)
             response = httpx.post(
                 url,
-                headers=_auth_headers(force_refresh=True),
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                },
                 json=payload,
                 timeout=15,
             )
@@ -489,17 +509,24 @@ def verify_bank_account(account_number: str, bank_code: str) -> dict:
             result = {}
 
         response_code = str(data.get("responseCode") or data.get("ResponseCode") or "")
+        top_level_code = str(data.get("code") or "")
+        top_level_success = bool(data.get("success") is True)
         account_name = (
             result.get("accountName")
             or result.get("AccountName")
             or result.get("beneficiaryName")
             or result.get("BeneficiaryName")
+            or (result.get("bankDetails") or {}).get("accountName")
             or data.get("accountName")
             or data.get("AccountName")
             or ""
         )
 
-        is_success = bool(account_name) and response_code not in {"ERROR", "VALIDATION_ERROR"}
+        is_success = bool(account_name) and (
+            top_level_success
+            or top_level_code == "200"
+            or response_code not in {"", "ERROR", "VALIDATION_ERROR"}
+        )
 
         if is_success and account_name:
             return {

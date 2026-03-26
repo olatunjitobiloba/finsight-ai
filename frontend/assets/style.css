@@ -187,6 +187,12 @@ body::after {
   font-size: 1.5rem;
 }
 
+.logo-icon-image {
+  width: 24px;
+  height: 24px;
+  display: block;
+}
+
 .logo-block .logo-icon {
   width: 90px;
   height: 90px;

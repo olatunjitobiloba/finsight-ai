@@ -3,12 +3,38 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from supabase import create_client
 import os
+import json
+import base64
 
 router = APIRouter()
 
-SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_URL = os.getenv("SUPABASE_URL", "") or "https://sfmosgngefdnvmposqml.supabase.co"
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "") or os.getenv("SUPABASE_KEY", "")
-SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "") or os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "")
+RAW_PUBLIC_ANON_KEY = (
+    os.getenv("SUPABASE_ANON_KEY", "")
+    or os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "")
+)
+
+
+def _is_anon_jwt(token: str) -> bool:
+    """Return True only when token payload role is anon."""
+    if not token or token.count(".") < 2:
+        return False
+    try:
+        payload_part = token.split(".")[1]
+        padding = "=" * (-len(payload_part) % 4)
+        decoded = base64.urlsafe_b64decode((payload_part + padding).encode("utf-8"))
+        payload = json.loads(decoded.decode("utf-8"))
+        return str(payload.get("role", "")).lower() == "anon"
+    except Exception:
+        return False
+
+
+SUPABASE_ANON_KEY = RAW_PUBLIC_ANON_KEY
+if not SUPABASE_ANON_KEY:
+    candidate = os.getenv("SUPABASE_KEY", "")
+    if _is_anon_jwt(candidate):
+        SUPABASE_ANON_KEY = candidate
 
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY) if (SUPABASE_URL and SUPABASE_SERVICE_KEY) else None
 

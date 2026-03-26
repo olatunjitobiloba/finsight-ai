@@ -157,7 +157,15 @@ async def execute_payment_items(biller_id: int):
             "provider_message": message,
         }
 
-    return {"success": False, "status": "failed", "message": message}
+    response = {
+        "success": False,
+        "status": "failed",
+        "message": message,
+    }
+    for key in ["error_type", "phase", "url_host", "status_code", "attempts", "retryable"]:
+        if key in result:
+            response[key] = result.get(key)
+    return response
 
 
 @router.get("/status")

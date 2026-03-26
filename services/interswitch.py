@@ -6,7 +6,8 @@ import hmac
 import os
 import time
 import uuid
-from typing import Optional
+from typing import Any, Optional
+from urllib.parse import urlparse
 
 import httpx
 
@@ -26,6 +27,89 @@ _token_cache = {
     "profile_token": None,
     "profile_expires_at": 0,
 }
+
+
+def _request_with_retry(
+    method: str,
+    url: str,
+    *,
+    headers: Optional[dict] = None,
+    params: Optional[dict] = None,
+    json: Optional[dict] = None,
+    data: Optional[dict] = None,
+    timeout: float = 10.0,
+    max_attempts: int = 2,
+    retry_delay_seconds: float = 1.0,
+) -> dict:
+    """Perform an HTTP request with retry on transport-level disconnects."""
+    parsed = urlparse(url)
+    host = parsed.hostname or ""
+
+    transport_exceptions = (
+        httpx.RemoteProtocolError,
+        httpx.ConnectError,
+        httpx.ReadError,
+        httpx.WriteError,
+        httpx.ReadTimeout,
+        httpx.WriteTimeout,
+        httpx.PoolTimeout,
+    )
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            response = httpx.request(
+                method=method,
+                url=url,
+                headers=headers,
+                params=params,
+                json=json,
+                data=data,
+                timeout=timeout,
+            )
+            return {"ok": True, "response": response, "attempts": attempt}
+        except transport_exceptions as exc:
+            if attempt < max_attempts:
+                time.sleep(retry_delay_seconds)
+                continue
+
+            return {
+                "ok": False,
+                "error": {
+                    "status": "error",
+                    "message": str(exc),
+                    "error_type": exc.__class__.__name__,
+                    "phase": "transport",
+                    "url_host": host,
+                    "attempts": attempt,
+                    "retryable": True,
+                },
+            }
+        except Exception as exc:
+            return {
+                "ok": False,
+                "error": {
+                    "status": "error",
+                    "message": str(exc),
+                    "error_type": exc.__class__.__name__,
+                    "phase": "request",
+                    "url_host": host,
+                    "attempts": attempt,
+                    "retryable": False,
+                },
+            }
+
+    return {
+        "ok": False,
+        "error": {
+            "status": "error",
+            "message": "Unknown request failure",
+            "error_type": "UnknownError",
+            "phase": "request",
+            "url_host": host,
+            "attempts": max_attempts,
+            "retryable": False,
+        },
+    }
 
 
 def _env(*names: str) -> str:
@@ -254,11 +338,20 @@ def get_payment_items(biller_id: int) -> dict:
     """Fetch biller payment items and payment codes."""
     try:
         url = f"{QUICKTELLER_V2_URL}/billers/{int(biller_id)}/paymentitems"
-        response = httpx.get(
+        timeout_seconds = float(os.getenv("INTERSWITCH_PAYMENT_ITEMS_TIMEOUT_SECONDS", "3"))
+        wrapped = _request_with_retry(
+            "GET",
             url,
             headers=_build_interswitch_auth_headers("GET", url),
-            timeout=15,
+            timeout=timeout_seconds,
+            max_attempts=2,
+            retry_delay_seconds=1.0,
         )
+
+        if not wrapped.get("ok"):
+            return wrapped.get("error", {"status": "error", "message": "Request failed"})
+
+        response = wrapped["response"]
         response.raise_for_status()
         payload = response.json()
         if isinstance(payload, list):
@@ -269,9 +362,26 @@ def get_payment_items(biller_id: int) -> dict:
                 return {"status": "success", "data": data}
         return {"status": "success", "data": []}
     except httpx.HTTPStatusError as e:
-        return {"status": "error", "message": _parse_error_message(e.response)}
+        parsed = urlparse(str(e.request.url) if e.request else QUICKTELLER_V2_URL)
+        return {
+            "status": "error",
+            "message": _parse_error_message(e.response),
+            "error_type": "HTTPStatusError",
+            "phase": "http_status",
+            "url_host": parsed.hostname or "",
+            "status_code": e.response.status_code,
+            "retryable": False,
+        }
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        parsed = urlparse(QUICKTELLER_V2_URL)
+        return {
+            "status": "error",
+            "message": str(e),
+            "error_type": e.__class__.__name__,
+            "phase": "request",
+            "url_host": parsed.hostname or "",
+            "retryable": False,
+        }
 
 
 def validate_customer(customer_id: str, payment_code: str) -> dict:

@@ -1611,7 +1611,9 @@ async function getSupabaseSession() {
 async function showHistoryModal() {
   const session = await getSupabaseSession();
   if (!session) {
+    sessionStorage.setItem(AUTH_PENDING_ACTION_KEY, "showHistoryModal");
     showToast("Please sign in to view your history.", "info");
+    goToLogin();
     return;
   }
 

@@ -510,10 +510,37 @@ def verify_bank_account(account_number: str, bank_code: str) -> dict:
                 "raw": data,
             }
 
+        provider_code = str(data.get("responseCode") or data.get("ResponseCode") or "")
+        log_id = str(data.get("logId") or data.get("logID") or "")
         error_message = data.get("message") or data.get("ResponseDescription") or f"Verification failed - code: {response_code}"
-        return {"status": "error", "message": error_message, "raw": data}
+        if log_id:
+            error_message = f"{error_message} (logId: {log_id})"
+        return {
+            "status": "error",
+            "message": error_message,
+            "raw": data,
+            "provider_code": provider_code,
+            "log_id": log_id,
+        }
     except httpx.HTTPStatusError as e:
-        return {"status": "error", "message": _parse_error_message(e.response)}
+        log_id = ""
+        provider_code = ""
+        message = _parse_error_message(e.response)
+        try:
+            payload = e.response.json()
+            if isinstance(payload, dict):
+                log_id = str(payload.get("logId") or payload.get("logID") or "")
+                provider_code = str(payload.get("responseCode") or payload.get("ResponseCode") or "")
+                if log_id and "logId:" not in message:
+                    message = f"{message} (logId: {log_id})"
+        except Exception:
+            pass
+        return {
+            "status": "error",
+            "message": message,
+            "provider_code": provider_code,
+            "log_id": log_id,
+        }
     except Exception as e:
         return {"status": "error", "message": str(e)}
 

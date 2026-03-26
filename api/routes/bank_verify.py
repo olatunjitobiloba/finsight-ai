@@ -44,7 +44,12 @@ async def verify_account(req: BankVerifyRequest):
             "bank_code": req.bank_code,
         }
     
-    return {
+    response = {
         "status": "error",
         "message": result.get("message", "Verification failed")
     }
+    if result.get("provider_code"):
+        response["provider_code"] = result.get("provider_code")
+    if result.get("log_id"):
+        response["log_id"] = result.get("log_id")
+    return response

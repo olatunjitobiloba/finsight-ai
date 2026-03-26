@@ -219,6 +219,12 @@ async def execute_banks():
         "success": False,
         "status": "failed",
         "message": message,
+        "debug": {
+            "verify_base_url": VERIFY_BASE_URL,
+            "full_url": result.get("resolved_url") or f"{VERIFY_BASE_URL}/verify/identity/account-number/bank-list",
+            "status_code": result.get("status_code"),
+            "response_preview": result.get("response_preview", ""),
+        },
     }
 
 

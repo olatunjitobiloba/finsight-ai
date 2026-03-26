@@ -3,6 +3,7 @@
 import base64
 import hashlib
 import hmac
+import logging
 import os
 import time
 import uuid
@@ -558,26 +559,53 @@ def check_transaction(request_reference: str) -> dict:
 
 def get_bank_list() -> dict:
     """Fetch list of banks and corresponding bank codes."""
+    url = f"{VERIFY_BASE_URL}/verify/identity/account-number/bank-list"
     try:
         # Bank list is served by Marketplace Verify API in current subscription.
-        url = f"{VERIFY_BASE_URL}/verify/identity/account-number/bank-list"
+        logging.warning("[get_bank_list] Calling URL: %s", url)
+        logging.warning("[get_bank_list] VERIFY_BASE_URL = %s", VERIFY_BASE_URL)
         response = httpx.get(url, headers=_auth_headers(), timeout=15)
 
         # Token may be stale; force refresh once on unauthorized.
         if response.status_code == 401:
+            logging.warning("[get_bank_list] Received 401, retrying with refreshed token")
             response = httpx.get(url, headers=_auth_headers(force_refresh=True), timeout=15)
 
+        logging.warning("[get_bank_list] Status code: %s", response.status_code)
+        logging.warning("[get_bank_list] Raw response preview: %s", response.text[:500])
         response.raise_for_status()
         data = response.json()
         if isinstance(data, list):
-            return {"status": "success", "banks": data}
+            return {"status": "success", "banks": data, "resolved_url": url}
         if isinstance(data, dict):
-            return {"status": "success", "banks": data.get("data") or data.get("banks") or []}
-        return {"status": "success", "banks": []}
+            return {
+                "status": "success",
+                "banks": data.get("data") or data.get("banks") or [],
+                "resolved_url": url,
+            }
+        return {"status": "success", "banks": [], "resolved_url": url}
     except httpx.HTTPStatusError as e:
-        return {"status": "error", "message": _parse_error_message(e.response)}
+        response_text = ""
+        status_code = None
+        if e.response is not None:
+            status_code = e.response.status_code
+            response_text = e.response.text[:500]
+
+        logging.warning("[get_bank_list] HTTP error status=%s body=%s", status_code, response_text)
+        return {
+            "status": "error",
+            "message": _parse_error_message(e.response),
+            "resolved_url": url,
+            "status_code": status_code,
+            "response_preview": response_text,
+        }
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        logging.warning("[get_bank_list] Exception: %s", str(e))
+        return {
+            "status": "error",
+            "message": str(e),
+            "resolved_url": url,
+        }
 
 
 def verify_bank_account(account_number: str, bank_code: str) -> dict:

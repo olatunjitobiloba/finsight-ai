@@ -215,3 +215,84 @@ async def execute_status():
         "message": message,
         "checks": checks,
     }
+
+
+def _mask_secret(value: str, prefix: int = 4, suffix: int = 4) -> str:
+    text = (value or "").strip()
+    if not text:
+        return "NOT SET"
+    if len(text) <= prefix + suffix:
+        return "TOO SHORT"
+    return f"{text[:prefix]}...{text[-suffix:]}"
+
+
+def _env_family(url: str) -> str:
+    text = (url or "").strip().lower()
+    if "sandbox" in text:
+        return "sandbox"
+    if "qa" in text:
+        return "qa"
+    if "api.interswitchng.com" in text:
+        return "production"
+    return "unknown"
+
+
+@router.get("/isw-config")
+async def execute_isw_config():
+    """Safe diagnostic endpoint showing effective Interswitch config alignment."""
+    qt_v2_configured = (os.getenv("INTERSWITCH_QT_V2_BASE_URL") or "").strip()
+    qt_base_configured = (os.getenv("INTERSWITCH_QT_BASE_URL") or "").strip()
+    token_configured = (os.getenv("INTERSWITCH_TOKEN_URL") or "").strip()
+    verify_configured = (os.getenv("INTERSWITCH_VERIFY_BASE_URL") or "").strip()
+
+    qt_v2_effective = qt_v2_configured or "https://sandbox.interswitchng.com/api/v2/quickteller"
+    qt_base_effective = qt_base_configured or "https://qa.interswitchng.com/quicktellerservice/api/v5"
+    token_effective = token_configured or "https://qa.interswitchng.com/passport/oauth/token"
+    verify_effective = verify_configured or "https://api-marketplace-routing.k8.isw.la/marketplace-routing/api/v1"
+
+    token_env = _env_family(token_effective)
+    api_env = _env_family(qt_v2_effective)
+    matched = token_env == api_env and token_env != "unknown"
+
+    return {
+        "success": True,
+        "status": "ok",
+        "urls": {
+            "INTERSWITCH_QT_V2_BASE_URL": {
+                "configured": qt_v2_configured or "NOT SET",
+                "effective": qt_v2_effective,
+            },
+            "INTERSWITCH_QT_BASE_URL": {
+                "configured": qt_base_configured or "NOT SET",
+                "effective": qt_base_effective,
+            },
+            "INTERSWITCH_TOKEN_URL": {
+                "configured": token_configured or "NOT SET",
+                "effective": token_effective,
+            },
+            "INTERSWITCH_VERIFY_BASE_URL": {
+                "configured": verify_configured or "NOT SET",
+                "effective": verify_effective,
+            },
+        },
+        "credentials": {
+            "client_id": _mask_secret(os.getenv("INTERSWITCH_CLIENT_ID") or ""),
+            "client_secret": _mask_secret(
+                os.getenv("INTERSWITCH_CLIENT_SECRET")
+                or os.getenv("INTERSWITCH_SECRET_KEY")
+                or os.getenv("INTERSWITCH_SECRET")
+                or ""
+            ),
+            "terminal_id": _mask_secret(os.getenv("INTERSWITCH_TERMINAL_ID") or "3DMO0001"),
+        },
+        "alignment": {
+            "token_env": token_env,
+            "api_env": api_env,
+            "matched": matched,
+            "verdict": (
+                "Environments aligned."
+                if matched
+                else f"MISMATCH - token={token_env} api={api_env}. Set both to the same environment."
+            ),
+        },
+    }

@@ -7,8 +7,8 @@
   <meta name="description" content="FinSight AI authentication" />
   <title>FinSight AI - Login</title>
   <link rel="manifest" href="./manifest.json" />
-  <link rel="icon" type="image/svg+xml" href="./assets/logo-mark.svg?v=20260326d" />
-  <link rel="stylesheet" href="./assets/style.css?v=20260326d" />
+  <link rel="icon" type="image/svg+xml" href="./assets/logo-mark.svg?v=20260326e" />
+  <link rel="stylesheet" href="./assets/style.css?v=20260326e" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -53,28 +53,14 @@
       font-size: 0.95rem;
       margin-bottom: 18px;
     }
-    .login-grid {
-      display: grid;
-      gap: 12px;
+    .login-note {
       margin-bottom: 14px;
-    }
-    .login-label {
-      font-size: 0.82rem;
-      font-weight: 700;
-      letter-spacing: 0.04em;
-      color: #59382d;
-      text-transform: uppercase;
-      margin-bottom: 5px;
-      display: block;
-    }
-    .login-input {
-      width: 100%;
-      border: 1px solid rgba(71, 32, 28, 0.26);
+      color: #6d5144;
+      font-size: 0.92rem;
+      background: rgba(71, 32, 28, 0.06);
+      border: 1px solid rgba(71, 32, 28, 0.16);
       border-radius: 12px;
-      padding: 11px 12px;
-      font-size: 0.95rem;
-      background: #fff;
-      color: #2f1712;
+      padding: 10px 12px;
     }
     .login-actions {
       display: flex;
@@ -116,25 +102,14 @@
   <main class="login-shell">
     <section class="login-card" aria-labelledby="loginTitle">
       <div class="login-brand">
-        <img src="./assets/logo-mark.svg?v=20260326d" alt="FinSight logo" />
+        <img src="./assets/logo-mark.svg?v=20260326e" alt="FinSight logo" />
         <strong>FinSight AI</strong>
       </div>
       <h1 id="loginTitle" class="login-title">Sign in to continue</h1>
-      <p class="login-sub">Use Google authentication for protected actions and history. If auth is not yet configured, add your Supabase project URL and anon key below.</p>
-
-      <div class="login-grid">
-        <div>
-          <label class="login-label" for="sbUrl">Supabase URL</label>
-          <input id="sbUrl" class="login-input" type="url" placeholder="https://your-project.supabase.co" autocomplete="off" />
-        </div>
-        <div>
-          <label class="login-label" for="sbAnon">Supabase Anon Key</label>
-          <input id="sbAnon" class="login-input" type="text" placeholder="eyJ..." autocomplete="off" />
-        </div>
-      </div>
+      <p class="login-sub">Use your Google account to sign in. If you are new, your account is created automatically on first sign-in.</p>
+      <div class="login-note">No manual setup is required. Click the Google button and continue with your Gmail account.</div>
 
       <div class="login-actions">
-        <button class="btn btn-ghost" id="saveConfigBtn" type="button">Save Auth Config</button>
         <button class="btn btn-primary" id="googleLoginBtn" type="button">Sign in with Google</button>
         <a class="btn btn-ghost" href="./dashboard.html">Back to Dashboard</a>
       </div>
@@ -152,14 +127,12 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="./assets/auth.js?v=20260326d"></script>
+  <script src="./assets/auth.js?v=20260326e"></script>
   <script>
     (function initLoginPage() {
       const statusEl = document.getElementById("loginStatus");
       const emailEl = document.getElementById("sessionEmail");
       const sessionPanel = document.getElementById("sessionPanel");
-      const sbUrlEl = document.getElementById("sbUrl");
-      const sbAnonEl = document.getElementById("sbAnon");
       const continueBtn = document.getElementById("continueBtn");
       const nextParam = new URLSearchParams(window.location.search).get("next") || "./dashboard.html";
 
@@ -178,9 +151,8 @@
           return;
         }
 
+        await window.finsightAuth.fetchPublicConfig();
         const config = window.finsightAuth.getConfig();
-        if (config.url && !sbUrlEl.value) sbUrlEl.value = config.url;
-        if (config.anonKey && !sbAnonEl.value) sbAnonEl.value = config.anonKey;
 
         const session = await window.finsightAuth.getSession();
         if (!session) {
@@ -188,7 +160,7 @@
           if (config.configured) {
             setStatus("Ready to sign in with Google.");
           } else {
-            setStatus("Supabase auth is not configured yet. Save URL + anon key first.", "error");
+            setStatus("Sign-in is temporarily unavailable. Please try again shortly.", "error");
           }
           return;
         }
@@ -198,35 +170,16 @@
         setStatus("You are signed in.");
       }
 
-      document.getElementById("saveConfigBtn").addEventListener("click", async () => {
-        const url = sbUrlEl.value.trim();
-        const anon = sbAnonEl.value.trim();
-
-        if (!url || !anon) {
-          setStatus("Both Supabase URL and anon key are required.", "error");
-          return;
-        }
-
-        window.finsightAuth.persistConfig(url, anon);
-        const init = window.finsightAuth.initializeClient();
-        if (!init.ok) {
-          setStatus(init.message || "Unable to initialize auth.", "error");
-          return;
-        }
-
-        setStatus("Auth config saved.");
-        await renderSession();
-      });
-
       document.getElementById("googleLoginBtn").addEventListener("click", async () => {
         if (!window.finsightAuth) {
           setStatus("Auth bootstrap missing.", "error");
           return;
         }
 
+        await window.finsightAuth.fetchPublicConfig();
         const config = window.finsightAuth.getConfig();
         if (!config.configured) {
-          setStatus("Save Supabase URL and anon key first.", "error");
+          setStatus("Sign-in is not configured on the server yet.", "error");
           return;
         }
 

@@ -1041,11 +1041,6 @@ function renderActions(actions) {
 async function requireAuth(actionFn) {
   const session = await getSupabaseSession();
   if (!session) {
-    if (!window.finsightAuth?.getConfig?.().configured) {
-      queuePendingAuthAction(actionFn);
-      goToLogin();
-      return;
-    }
     showAuthModal(actionFn);
     return;
   }
@@ -1590,9 +1585,10 @@ async function signInWithGoogle() {
     return;
   }
 
+  await window.finsightAuth.fetchPublicConfig();
   const config = window.finsightAuth.getConfig();
   if (!config.configured) {
-    showToast("Open login page to configure Supabase first.", "warning");
+    showToast("Sign-in is not configured on the server yet.", "warning");
     goToLogin();
     return;
   }

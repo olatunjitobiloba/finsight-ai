@@ -6,7 +6,10 @@
   <meta name="theme-color" content="#f8f4ee"/>
   <title>FinSight AI - Financial Decision Engine</title>
   <link rel="manifest" href="./manifest.json" />
-  <link rel="stylesheet" href="./assets/style.css?v=20260325h" />
+  <link rel="icon" type="image/svg+xml" href="./assets/logo-mark.svg?v=20260326b" />
+  <link rel="shortcut icon" href="./assets/logo-mark.svg?v=20260326b" />
+  <link rel="apple-touch-icon" href="./assets/logo-mark.svg?v=20260326b" />
+  <link rel="stylesheet" href="./assets/style.css?v=20260326e" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,700&display=swap" rel="stylesheet" />
@@ -25,7 +28,9 @@
   <header class="header cleo-header">
     <div class="header-inner">
       <div class="logo">
-        <span class="logo-icon"><i class="fa-solid fa-wave-square" aria-hidden="true"></i></span>
+        <span class="logo-icon">
+          <img src="./assets/logo-mark.svg?v=20260326b" alt="FinSight logo" class="logo-icon-image" />
+        </span>
         <span class="logo-text">FinSight <span class="logo-ai">AI</span></span>
       </div>
       <div class="header-right">
@@ -473,6 +478,9 @@
         <i class="fa-solid fa-lock" aria-hidden="true"></i>
         Sign in with Google
       </button>
+      <button class="btn btn-ghost" onclick="goToLogin()" type="button">
+        Open Login Page
+      </button>
       <div class="modal-note">
         We never store your bank password.
         Only your account number is used for payment routing.
@@ -532,6 +540,8 @@
 
   <div class="toast hidden" id="toast"></div>
 
-  <script src="./assets/app.js?v=20260325h"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./assets/auth.js?v=20260326e"></script>
+  <script src="./assets/app.js?v=20260326e"></script>
 </body>
 </html>

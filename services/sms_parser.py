@@ -18,6 +18,155 @@ from datetime import datetime
 from typing import Dict, Optional, List
 
 
+MONTH_MAP = {
+    "jan": 1,
+    "feb": 2,
+    "mar": 3,
+    "apr": 4,
+    "may": 5,
+    "jun": 6,
+    "jul": 7,
+    "aug": 8,
+    "sep": 9,
+    "oct": 10,
+    "nov": 11,
+    "dec": 12,
+}
+
+
+def _clean_money(value: str) -> float:
+    return float((value or "0").replace(",", "").strip())
+
+
+def _parse_flexible_date(date_text: str) -> Optional[str]:
+    if not date_text:
+        return None
+
+    raw = str(date_text).strip()
+    for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%b-%Y", "%d-%b-%y"):
+        try:
+            return datetime.strptime(raw, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    return None
+
+
+def _infer_month_year_date(text: str) -> Optional[str]:
+    if not text:
+        return None
+
+    m = re.search(
+        r"\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})\b",
+        text,
+        re.IGNORECASE,
+    )
+    if not m:
+        return None
+
+    month_name = m.group(1)[:3].lower()
+    month = MONTH_MAP.get(month_name)
+    year = int(m.group(2))
+    if not month:
+        return None
+
+    return f"{year:04d}-{month:02d}-01"
+
+
+def _normalize_transaction_schema(parsed: Dict) -> Dict:
+    if not parsed:
+        return parsed
+
+    tx_date = parsed.get("transaction_date") or parsed.get("date")
+    if tx_date:
+        parsed["transaction_date"] = tx_date
+        parsed["date"] = tx_date
+
+    amount = parsed.get("amount", 0)
+    try:
+        parsed["amount"] = abs(float(amount))
+    except (ValueError, TypeError):
+        parsed["amount"] = 0.0
+
+    tx_type = (parsed.get("type") or "").lower().strip()
+    parsed["type"] = "credit" if tx_type == "credit" else "debit"
+
+    if not parsed.get("category"):
+        parsed["category"] = "Uncategorized"
+
+    return parsed
+
+
+def _is_valid_transaction(parsed: Optional[Dict]) -> bool:
+    if not parsed:
+        return False
+
+    tx_date = parsed.get("transaction_date") or parsed.get("date")
+    amount = parsed.get("amount")
+    tx_type = (parsed.get("type") or "").lower()
+    return bool(tx_date and isinstance(amount, (int, float)) and amount > 0 and tx_type in {"credit", "debit"})
+
+
+def _parse_common_alert_sms(sms_text: str, bank: str) -> Optional[Dict]:
+    text = (sms_text or "").strip()
+    if not text:
+        return None
+
+    pattern_with_date = re.search(
+        r"(?P<type>credited|debited)\s+with\s*(?:NGN|N)\s*(?P<amount>[\d,]+(?:\.\d{1,2})?)"
+        r".*?\bon\s*(?P<date>\d{2}-[A-Za-z]{3}-\d{2,4})"
+        r".*?(?:Desc|Narration):\s*(?P<desc>.*?)"
+        r"(?:\.\s*Bal:\s*(?:NGN|N)\s*(?P<bal>[\d,]+(?:\.\d{1,2})?))",
+        text,
+        re.IGNORECASE,
+    )
+
+    if pattern_with_date:
+        tx_type = "credit" if pattern_with_date.group("type").lower() == "credited" else "debit"
+        tx_date = _parse_flexible_date(pattern_with_date.group("date"))
+        if not tx_date:
+            return None
+
+        balance = pattern_with_date.group("bal")
+        return {
+            "bank": bank,
+            "amount": _clean_money(pattern_with_date.group("amount")),
+            "date": tx_date,
+            "transaction_date": tx_date,
+            "type": tx_type,
+            "description": (pattern_with_date.group("desc") or "Transaction").strip().rstrip("."),
+            "balance": _clean_money(balance) if balance else 0.0,
+            "category": "Uncategorized",
+        }
+
+    pattern_without_date = re.search(
+        r"(?P<type>credited|debited)\s+with\s*(?:NGN|N)\s*(?P<amount>[\d,]+(?:\.\d{1,2})?)"
+        r".*?(?:Desc|Narration):\s*(?P<desc>.*?)"
+        r"(?:\.\s*Bal:\s*(?:NGN|N)\s*(?P<bal>[\d,]+(?:\.\d{1,2})?))",
+        text,
+        re.IGNORECASE,
+    )
+
+    if pattern_without_date:
+        inferred_date = _infer_month_year_date(pattern_without_date.group("desc") or "")
+        if not inferred_date:
+            return None
+
+        tx_type = "credit" if pattern_without_date.group("type").lower() == "credited" else "debit"
+        balance = pattern_without_date.group("bal")
+        return {
+            "bank": bank,
+            "amount": _clean_money(pattern_without_date.group("amount")),
+            "date": inferred_date,
+            "transaction_date": inferred_date,
+            "type": tx_type,
+            "description": (pattern_without_date.group("desc") or "Transaction").strip().rstrip("."),
+            "balance": _clean_money(balance) if balance else 0.0,
+            "category": "Uncategorized",
+        }
+
+    return None
+
+
 def normalize_bank_type(bank_type: Optional[str]) -> Optional[str]:
     """Normalize user-provided bank labels to parser bank codes."""
     if not bank_type:
@@ -71,18 +220,28 @@ def parse_sms(sms_text: str, bank_type: Optional[str] = None) -> Optional[Dict]:
                 return None
         
         # Parse based on bank
+        parsed = None
         if bank == "access":
-            return parse_access_bank_sms(cleaned_text)
+            parsed = parse_access_bank_sms(cleaned_text)
         elif bank == "gt":
-            return parse_gtbank_sms(cleaned_text)
+            parsed = parse_gtbank_sms(cleaned_text)
         elif bank == "first":
-            return parse_first_bank_sms(cleaned_text)
+            parsed = parse_first_bank_sms(cleaned_text)
         elif bank == "zenith":
-            return parse_zenith_sms(cleaned_text)
+            parsed = parse_zenith_sms(cleaned_text)
         elif bank == "uba":
-            return parse_uba_sms(cleaned_text)
+            parsed = parse_uba_sms(cleaned_text)
         else:
             return None
+
+        # Fallback for compact Nigerian alert formats used in demo and real app flows.
+        if not _is_valid_transaction(parsed):
+            parsed = _parse_common_alert_sms(cleaned_text, bank)
+
+        if not _is_valid_transaction(parsed):
+            return None
+
+        return _normalize_transaction_schema(parsed)
             
     except Exception as e:
         print(f"Error parsing SMS: {e}")
@@ -140,6 +299,14 @@ def parse_access_bank_sms(sms_text: str) -> Dict:
     if amount_match:
         amount_str = amount_match.group(1).replace(',', '')
         result["amount"] = float(amount_str)
+    else:
+        alt_amount_match = re.search(
+            r'(?:credited|debited)\s+with\s*(?:NGN|N)\s*([\d,]+(?:\.\d{1,2})?)',
+            sms_text,
+            re.IGNORECASE,
+        )
+        if alt_amount_match:
+            result["amount"] = _clean_money(alt_amount_match.group(1))
     
     # Extract date
     date_match = re.search(r'Date:\s*(\d{2}/\d{2}/\d{4})', sms_text, re.IGNORECASE)
@@ -151,18 +318,36 @@ def parse_access_bank_sms(sms_text: str) -> Dict:
             result["date"] = date_obj.strftime("%Y-%m-%d")
         except ValueError:
             result["date"] = date_str
+    else:
+        alt_date_match = re.search(r'\bon\s*(\d{2}-[A-Za-z]{3}-\d{2,4})', sms_text, re.IGNORECASE)
+        if alt_date_match:
+            normalized = _parse_flexible_date(alt_date_match.group(1))
+            if normalized:
+                result["date"] = normalized
+        else:
+            inferred = _infer_month_year_date(sms_text)
+            if inferred:
+                result["date"] = inferred
     
     # Extract balance
     balance_match = re.search(r'Avail Bal:\s*NGN?([\d,]+\.\d{2})', sms_text, re.IGNORECASE)
     if balance_match:
         balance_str = balance_match.group(1).replace(',', '')
         result["balance"] = float(balance_str)
+    else:
+        alt_balance_match = re.search(r'Bal:\s*(?:NGN|N)\s*([\d,]+(?:\.\d{1,2})?)', sms_text, re.IGNORECASE)
+        if alt_balance_match:
+            result["balance"] = _clean_money(alt_balance_match.group(1))
     
     # Extract description
     desc_match = re.search(r'Desc:\s*(.*)', sms_text, re.IGNORECASE)
 
     if desc_match:
         result["description"] = desc_match.group(1).strip()
+    else:
+        narration_match = re.search(r'Narration:\s*(.*?)(?:\.\s*Bal:|$)', sms_text, re.IGNORECASE)
+        if narration_match:
+            result["description"] = narration_match.group(1).strip().rstrip('.')
     
     # Extract account number (masked)
     acc_match = re.search(r'Acc:\s*(\d+\*+\d+)', sms_text, re.IGNORECASE)
@@ -356,7 +541,8 @@ def parse_multiple_sms(sms_list: List[str], bank_type: Optional[str] = None) -> 
     
     for sms in sms_list:
         parsed = parse_sms(sms, bank_type)
-        if parsed:
+        if _is_valid_transaction(parsed):
+            parsed = _normalize_transaction_schema(parsed)
             results["parsed"].append(parsed)
             results["success_count"] += 1
         else:

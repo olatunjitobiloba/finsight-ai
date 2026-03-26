@@ -27,6 +27,8 @@ let activeTab = "sms";
 let currentPillarExplanations = {};
 let currentPillarWhyLines = {};
 
+const AUTH_PENDING_ACTION_KEY = "finsight.pending.action";
+
 const PILLAR_KEYS = [
   "income_stability",
   "spending_control",
@@ -288,11 +290,11 @@ async function analyzeCSV() {
       throw new Error(parseResult?.error || "CSV parsing returned no transactions");
     }
 
-    const analyzeResponse = await fetchJson(`${API_BASE}/api/analyze`, {
+    const analyzeResponse = await fetchJson(`${API_BASE}/api/analyze/transactions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        sms_text: buildSMSFromTransactions(parsedTransactions)
+        transactions: parsedTransactions
       })
     });
 
@@ -319,7 +321,7 @@ async function analyzeCSV() {
 
 async function analyzePDF() {
   if (pdfDemoMode) {
-    await runAnalysis({ sms_text: DEMO_SMS }, "/api/analyze");
+    await analyzeDemoPDF();
     return;
   }
 
@@ -411,6 +413,10 @@ function loadDemoPDF() {
   getEl("pdfDropZone")?.classList.add("has-file");
   switchTab("pdf");
   showToast("Demo PDF loaded. Click Extract & Analyze.");
+}
+
+async function analyzeDemoPDF() {
+  await runAnalysis({ sms_text: DEMO_SMS, bank_type: "access" }, "/api/analyze");
 }
 
 function buildSMSFromTransactions(transactions) {
@@ -546,7 +552,10 @@ function renderDaysToZero(d) {
   }
 
   const msg = getEl("daysMessage");
-  if (msg) msg.textContent = d.message || "-";
+  if (msg) {
+    // Backward-compatible cleanup in case older API responses still include [TOKEN] prefixes.
+    msg.textContent = String(d.message || "-").replace(/^\s*\[[^\]]+\]\s*/u, "");
+  }
 
   const burn = getEl("dailyBurn");
   if (burn) {
@@ -561,7 +570,7 @@ function renderPatterns(p) {
   const patterns = Array.isArray(p.patterns) ? p.patterns : [];
   const patternCount = getEl("patternCount");
   if (patternCount) {
-    const count = Number(p.count || 0);
+    const count = Number(p.count || patterns.length || 0);
     patternCount.textContent = `${count} pattern${count !== 1 ? "s" : ""} found`;
   }
 
@@ -573,15 +582,22 @@ function renderPatterns(p) {
     return;
   }
 
-  list.innerHTML = patterns.map((pat, i) => `
-    <div class="pattern-item severity-${pat.severity}" style="animation-delay:${i * 150}ms">
+  list.innerHTML = patterns.map((pat, i) => {
+    const severity = ["low", "medium", "high"].includes(String(pat.severity || "").toLowerCase())
+      ? String(pat.severity).toLowerCase()
+      : "low";
+    const title = escapeHtml(pat.title || "Pattern detected");
+    const detail = escapeHtml(pat.detail || "No details available.");
+    return `
+    <div class="pattern-item severity-${severity}" style="animation-delay:${i * 150}ms">
       <div class="pattern-top">
-        <span class="pattern-title">${pat.title}</span>
-        <span class="pattern-badge ${pat.severity}">${pat.severity}</span>
+        <span class="pattern-title">${title}</span>
+        <span class="pattern-badge ${severity}">${severity}</span>
       </div>
-      <div class="pattern-detail">${pat.detail}</div>
+      <div class="pattern-detail">${detail}</div>
     </div>
-  `).join("");
+  `;
+  }).join("");
 }
 
 function renderPillars(pillars) {
@@ -722,27 +738,33 @@ function buildPillarWhyLines(_pillars, transactions) {
   }
 
   let spendingWhy;
-  if (totalIncome === 0) {
-    spendingWhy = "Branch: income == 0, so 0/25.";
+  if (totalSpending <= 0) {
+    spendingWhy = "Branch: spending <= 0, so 25/25.";
+  } else if (totalIncome <= 0) {
+    spendingWhy = "Branch: income <= 0 with spending present, so 0/25.";
   } else {
     const ratio = totalSpending / totalIncome;
     const ratioText = `${(ratio * 100).toFixed(1)}%`;
     if (ratio <= 0.35) {
       spendingWhy = `Branch: ratio <= 35% (${ratioText}), so 25/25.`;
     } else if (ratio <= 0.5) {
-      spendingWhy = `Branch: ratio <= 50% (${ratioText}), so 15/25.`;
+      spendingWhy = `Branch: ratio <= 50% (${ratioText}), so 18/25.`;
     } else if (ratio <= 0.7) {
-      spendingWhy = `Branch: ratio <= 70% (${ratioText}), so 10/25.`;
+      spendingWhy = `Branch: ratio <= 70% (${ratioText}), so 13/25.`;
     } else if (ratio <= 0.9) {
-      spendingWhy = `Branch: ratio <= 90% (${ratioText}), so 5/25.`;
+      spendingWhy = `Branch: ratio <= 90% (${ratioText}), so 9/25.`;
     } else if (ratio <= 1.0) {
-      spendingWhy = `Branch: ratio <= 100% (${ratioText}), so 2/25.`;
+      spendingWhy = `Branch: ratio <= 100% (${ratioText}), so 8/25.`;
     } else if (ratio <= 1.1) {
-      spendingWhy = `Branch: ratio <= 110% (${ratioText}), so 1/25.`;
+      spendingWhy = `Branch: ratio <= 110% (${ratioText}), so 6/25.`;
     } else if (ratio <= 1.25) {
-      spendingWhy = `Branch: ratio <= 125% (${ratioText}), so 0.5/25.`;
+      spendingWhy = `Branch: ratio <= 125% (${ratioText}), so 4/25.`;
+    } else if (ratio <= 1.5) {
+      spendingWhy = `Branch: ratio <= 150% (${ratioText}), so 2/25.`;
+    } else if (ratio <= 1.75) {
+      spendingWhy = `Branch: ratio <= 175% (${ratioText}), so 1/25.`;
     } else {
-      spendingWhy = `Branch: ratio > 125% (${ratioText}), so 0/25.`;
+      spendingWhy = `Branch: ratio > 175% (${ratioText}), so 0/25.`;
     }
   }
 
@@ -1023,6 +1045,37 @@ async function requireAuth(actionFn) {
     return;
   }
   await actionFn();
+}
+
+function queuePendingAuthAction(actionFn) {
+  const name = String(actionFn?.name || "").trim();
+  const mapped = name === "_doSave"
+    ? "simulateSave"
+    : (name === "_doBill" ? "simulateBill" : "");
+  if (mapped) {
+    sessionStorage.setItem(AUTH_PENDING_ACTION_KEY, mapped);
+  }
+}
+
+function goToLogin() {
+  const next = `${window.location.pathname.split("/").pop() || "dashboard.html"}${window.location.search || ""}`;
+  window.location.href = `./login.html?next=${encodeURIComponent(next)}`;
+}
+
+async function runPendingAuthActionIfAny() {
+  const actionName = sessionStorage.getItem(AUTH_PENDING_ACTION_KEY);
+  if (!actionName) return;
+
+  const session = await getSupabaseSession();
+  if (!session) return;
+
+  sessionStorage.removeItem(AUTH_PENDING_ACTION_KEY);
+  const action = window[actionName];
+  if (typeof action === "function") {
+    action().catch(() => {
+      showToast("Signed in, but we could not resume the previous action.", "warning");
+    });
+  }
 }
 
 function showAuthModal(pendingAction) {
@@ -1527,20 +1580,29 @@ async function confirmBankVerify() {
 }
 
 async function signInWithGoogle() {
-  if (!window.supabase?.auth) {
-    showToast("Supabase is not configured.", "error");
+  if (!window.finsightAuth) {
+    showToast("Auth bootstrap is not loaded.", "error");
     return;
   }
 
-  const { error } = await window.supabase.auth.signInWithOAuth({
-    provider: "google",
-    options: { redirectTo: window.location.href }
-  });
+  await window.finsightAuth.fetchPublicConfig();
+  const config = window.finsightAuth.getConfig();
+  if (!config.configured) {
+    showToast("Sign-in is not configured on the server yet.", "warning");
+    goToLogin();
+    return;
+  }
+
+  const redirectTo = window.location.href.split("#")[0];
+  const { error } = await window.finsightAuth.signInWithGoogle(redirectTo, "./dashboard.html");
 
   if (error) showToast(`Sign-in failed: ${error.message}`, "error");
 }
 
 async function getSupabaseSession() {
+  if (window.finsightAuth?.getSession) {
+    return window.finsightAuth.getSession();
+  }
   if (!window.supabase?.auth) return null;
   const { data } = await window.supabase.auth.getSession();
   return data?.session || null;
@@ -2298,8 +2360,16 @@ window.addEventListener("DOMContentLoaded", () => {
           showToast("Unable to continue action after sign-in.", "error");
         });
       }
+
+      runPendingAuthActionIfAny().catch(() => {
+        // no-op
+      });
     });
   }
+
+  runPendingAuthActionIfAny().catch(() => {
+    // no-op
+  });
 
   setupAuthModalBehavior();
   setupExecuteModalBehavior();
@@ -2337,6 +2407,7 @@ window.onBankSelected = onBankSelected;
 window.simulateSave = simulateSave;
 window.simulateBill = simulateBill;
 window.signInWithGoogle = signInWithGoogle;
+window.goToLogin = goToLogin;
 window.closeAuthModal = closeAuthModal;
 window.showHistoryModal = showHistoryModal;
 window.closeHistoryModal = closeHistoryModal;

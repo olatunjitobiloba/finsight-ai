@@ -1,6 +1,6 @@
 // FinSight AI — Service Worker
 
-const CACHE_NAME = "finsight-v4";
+const CACHE_NAME = "finsight-v5";
 
 const STATIC_ASSETS = [
   "./",

@@ -398,19 +398,15 @@ def days_to_zero(
     # ── Urgency level
     if days_remaining <= 3:
         urgency = "critical"
-        icon_label = "ALERT"
     elif days_remaining <= 7:
         urgency = "high"
-        icon_label = "WARNING"
     elif days_remaining <= 14:
         urgency = "medium"
-        icon_label = "TREND_DOWN"
     else:
         urgency = "low"
-        icon_label = "CHECK"
 
     message = (
-        f"[{icon_label}] At your current burn rate, "
+        f"At your current burn rate, "
         f"you will run out of money in {days_remaining} days "
         f"({prediction_date})."
     )

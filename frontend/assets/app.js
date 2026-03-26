@@ -550,7 +550,10 @@ function renderDaysToZero(d) {
   }
 
   const msg = getEl("daysMessage");
-  if (msg) msg.textContent = d.message || "-";
+  if (msg) {
+    // Backward-compatible cleanup in case older API responses still include [TOKEN] prefixes.
+    msg.textContent = String(d.message || "-").replace(/^\s*\[[^\]]+\]\s*/u, "");
+  }
 
   const burn = getEl("dailyBurn");
   if (burn) {
@@ -565,7 +568,7 @@ function renderPatterns(p) {
   const patterns = Array.isArray(p.patterns) ? p.patterns : [];
   const patternCount = getEl("patternCount");
   if (patternCount) {
-    const count = Number(p.count || 0);
+    const count = Number(p.count || patterns.length || 0);
     patternCount.textContent = `${count} pattern${count !== 1 ? "s" : ""} found`;
   }
 
@@ -577,15 +580,22 @@ function renderPatterns(p) {
     return;
   }
 
-  list.innerHTML = patterns.map((pat, i) => `
-    <div class="pattern-item severity-${pat.severity}" style="animation-delay:${i * 150}ms">
+  list.innerHTML = patterns.map((pat, i) => {
+    const severity = ["low", "medium", "high"].includes(String(pat.severity || "").toLowerCase())
+      ? String(pat.severity).toLowerCase()
+      : "low";
+    const title = escapeHtml(pat.title || "Pattern detected");
+    const detail = escapeHtml(pat.detail || "No details available.");
+    return `
+    <div class="pattern-item severity-${severity}" style="animation-delay:${i * 150}ms">
       <div class="pattern-top">
-        <span class="pattern-title">${pat.title}</span>
-        <span class="pattern-badge ${pat.severity}">${pat.severity}</span>
+        <span class="pattern-title">${title}</span>
+        <span class="pattern-badge ${severity}">${severity}</span>
       </div>
-      <div class="pattern-detail">${pat.detail}</div>
+      <div class="pattern-detail">${detail}</div>
     </div>
-  `).join("");
+  `;
+  }).join("");
 }
 
 function renderPillars(pillars) {
@@ -726,27 +736,33 @@ function buildPillarWhyLines(_pillars, transactions) {
   }
 
   let spendingWhy;
-  if (totalIncome === 0) {
-    spendingWhy = "Branch: income == 0, so 0/25.";
+  if (totalSpending <= 0) {
+    spendingWhy = "Branch: spending <= 0, so 25/25.";
+  } else if (totalIncome <= 0) {
+    spendingWhy = "Branch: income <= 0 with spending present, so 0/25.";
   } else {
     const ratio = totalSpending / totalIncome;
     const ratioText = `${(ratio * 100).toFixed(1)}%`;
     if (ratio <= 0.35) {
       spendingWhy = `Branch: ratio <= 35% (${ratioText}), so 25/25.`;
     } else if (ratio <= 0.5) {
-      spendingWhy = `Branch: ratio <= 50% (${ratioText}), so 15/25.`;
+      spendingWhy = `Branch: ratio <= 50% (${ratioText}), so 18/25.`;
     } else if (ratio <= 0.7) {
-      spendingWhy = `Branch: ratio <= 70% (${ratioText}), so 10/25.`;
+      spendingWhy = `Branch: ratio <= 70% (${ratioText}), so 13/25.`;
     } else if (ratio <= 0.9) {
-      spendingWhy = `Branch: ratio <= 90% (${ratioText}), so 5/25.`;
+      spendingWhy = `Branch: ratio <= 90% (${ratioText}), so 9/25.`;
     } else if (ratio <= 1.0) {
-      spendingWhy = `Branch: ratio <= 100% (${ratioText}), so 2/25.`;
+      spendingWhy = `Branch: ratio <= 100% (${ratioText}), so 8/25.`;
     } else if (ratio <= 1.1) {
-      spendingWhy = `Branch: ratio <= 110% (${ratioText}), so 1/25.`;
+      spendingWhy = `Branch: ratio <= 110% (${ratioText}), so 6/25.`;
     } else if (ratio <= 1.25) {
-      spendingWhy = `Branch: ratio <= 125% (${ratioText}), so 0.5/25.`;
+      spendingWhy = `Branch: ratio <= 125% (${ratioText}), so 4/25.`;
+    } else if (ratio <= 1.5) {
+      spendingWhy = `Branch: ratio <= 150% (${ratioText}), so 2/25.`;
+    } else if (ratio <= 1.75) {
+      spendingWhy = `Branch: ratio <= 175% (${ratioText}), so 1/25.`;
     } else {
-      spendingWhy = `Branch: ratio > 125% (${ratioText}), so 0/25.`;
+      spendingWhy = `Branch: ratio > 175% (${ratioText}), so 0/25.`;
     }
   }
 

@@ -2,11 +2,24 @@
 
 import os
 from typing import Optional
+from urllib.parse import urlparse
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from services.interswitch import get_billers, get_default_payment_code, get_payment_items, pay_bill, validate_customer
+from services.interswitch import (
+    BASE_URL,
+    QUICKTELLER_URL,
+    QUICKTELLER_V2_URL,
+    TERMINAL_ID,
+    TOKEN_URL,
+    VERIFY_BASE_URL,
+    get_billers,
+    get_default_payment_code,
+    get_payment_items,
+    pay_bill,
+    validate_customer,
+)
 
 router = APIRouter(prefix="/api/execute", tags=["execute"])
 
@@ -36,6 +49,10 @@ def _is_sandbox_pending(message: str) -> bool:
         "terminal",
         "merchant",
     ])
+
+
+def _host_of(url: str) -> str:
+    return urlparse(str(url or "")).netloc
 
 
 @router.post("/pay")
@@ -162,10 +179,48 @@ async def execute_payment_items(biller_id: int):
         "status": "failed",
         "message": message,
     }
-    for key in ["error_type", "phase", "url_host", "status_code", "attempts", "retryable"]:
+    for key in [
+        "request_id",
+        "target_path",
+        "error_type",
+        "phase",
+        "url_host",
+        "status_code",
+        "attempts",
+        "retryable",
+    ]:
         if key in result:
             response[key] = result.get(key)
     return response
+
+
+@router.get("/env-check")
+async def execute_env_check():
+    """Safe env diagnostics for Interswitch integration troubleshooting."""
+    client_id = (os.getenv("INTERSWITCH_CLIENT_ID") or os.getenv("INTERSWITCH_API_CLIENT_ID") or "").strip()
+    client_secret = (
+        os.getenv("INTERSWITCH_CLIENT_SECRET")
+        or os.getenv("INTERSWITCH_SECRET_KEY")
+        or os.getenv("INTERSWITCH_SECRET")
+        or os.getenv("INTERSWITCH_API_SECRET")
+        or ""
+    ).strip()
+
+    return {
+        "success": True,
+        "status": "ok",
+        "env": {
+            "token_url_host": _host_of(TOKEN_URL),
+            "quickteller_v1_host": _host_of(QUICKTELLER_URL),
+            "quickteller_v2_host": _host_of(QUICKTELLER_V2_URL),
+            "verify_host": _host_of(VERIFY_BASE_URL),
+            "base_url_host": _host_of(BASE_URL),
+            "terminal_id": TERMINAL_ID,
+            "client_id_present": bool(client_id),
+            "client_secret_present": bool(client_secret),
+            "default_payment_code_present": bool((get_default_payment_code() or "").strip()),
+        },
+    }
 
 
 @router.get("/status")

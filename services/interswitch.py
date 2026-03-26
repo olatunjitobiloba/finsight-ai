@@ -44,6 +44,8 @@ def _request_with_retry(
     """Perform an HTTP request with retry on transport-level disconnects."""
     parsed = urlparse(url)
     host = parsed.hostname or ""
+    path = parsed.path or "/"
+    request_id = str(uuid.uuid4())[:8]
 
     transport_exceptions = (
         httpx.RemoteProtocolError,
@@ -77,6 +79,8 @@ def _request_with_retry(
                 "error": {
                     "status": "error",
                     "message": str(exc),
+                    "request_id": request_id,
+                    "target_path": path,
                     "error_type": exc.__class__.__name__,
                     "phase": "transport",
                     "url_host": host,
@@ -90,6 +94,8 @@ def _request_with_retry(
                 "error": {
                     "status": "error",
                     "message": str(exc),
+                    "request_id": request_id,
+                    "target_path": path,
                     "error_type": exc.__class__.__name__,
                     "phase": "request",
                     "url_host": host,
@@ -103,6 +109,8 @@ def _request_with_retry(
         "error": {
             "status": "error",
             "message": "Unknown request failure",
+            "request_id": request_id,
+            "target_path": path,
             "error_type": "UnknownError",
             "phase": "request",
             "url_host": host,

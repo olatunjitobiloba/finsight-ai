@@ -559,11 +559,11 @@ def check_transaction(request_reference: str) -> dict:
 
 def get_bank_list() -> dict:
     """Fetch list of banks and corresponding bank codes."""
-    url = f"{QUICKTELLER_V2_URL}/banks"
+    url = f"{QUICKTELLER_URL}/banks"
     try:
         # Bank list is served by Quickteller, not the Verify identity API.
         logging.warning("[get_bank_list] Calling URL: %s", url)
-        logging.warning("[get_bank_list] QUICKTELLER_V2_URL = %s", QUICKTELLER_V2_URL)
+        logging.warning("[get_bank_list] QUICKTELLER_URL = %s", QUICKTELLER_URL)
         response = httpx.get(url, headers=_auth_headers(), timeout=15)
 
         # Token may be stale; force refresh once on unauthorized.

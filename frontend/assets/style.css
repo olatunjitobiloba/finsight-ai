@@ -347,6 +347,30 @@ body::after {
   animation: orbit 2.8s linear infinite;
 }
 
+.user-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  border: 2px solid rgba(71, 32, 28, 0.25);
+  background: rgba(71, 32, 28, 0.08);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  box-shadow: 0 6px 18px rgba(71, 32, 28, 0.16);
+}
+
+.user-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.user-avatar-fallback {
+  font-size: 0.86rem;
+  font-weight: 800;
+  color: #47201c;
+}
+
 @keyframes orbit {
   0% {
     transform: translate(0, 0);

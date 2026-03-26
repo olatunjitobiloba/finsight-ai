@@ -1608,6 +1608,58 @@ async function getSupabaseSession() {
   return data?.session || null;
 }
 
+function getSessionAvatarUrl(session) {
+  const meta = session?.user?.user_metadata || {};
+  const candidates = [meta.avatar_url, meta.picture, meta.photo_url, session?.user?.avatar_url];
+  for (const candidate of candidates) {
+    const url = String(candidate || "").trim();
+    if (url.startsWith("http://") || url.startsWith("https://")) {
+      return url;
+    }
+  }
+  return "";
+}
+
+function setHeaderAvatar(session) {
+  const avatar = getEl("userAvatar");
+  const avatarImg = getEl("userAvatarImg");
+  const avatarFallback = getEl("userAvatarFallback");
+  const brandMark = getEl("headerBrandMark");
+  if (!avatar || !avatarImg || !avatarFallback) return;
+
+  if (!session?.user) {
+    avatar.classList.add("hidden");
+    avatarImg.classList.add("hidden");
+    avatarImg.removeAttribute("src");
+    avatarFallback.textContent = "U";
+    brandMark?.classList.remove("hidden");
+    return;
+  }
+
+  const email = String(session.user.email || "").trim();
+  const name = String(session.user.user_metadata?.full_name || session.user.user_metadata?.name || "").trim();
+  const seed = name || email || "User";
+  avatarFallback.textContent = seed.charAt(0).toUpperCase();
+  avatar.classList.remove("hidden");
+  brandMark?.classList.add("hidden");
+
+  const avatarUrl = getSessionAvatarUrl(session);
+  if (!avatarUrl) {
+    avatarImg.classList.add("hidden");
+    avatarImg.removeAttribute("src");
+    return;
+  }
+
+  avatarImg.onload = () => {
+    avatarImg.classList.remove("hidden");
+  };
+  avatarImg.onerror = () => {
+    avatarImg.classList.add("hidden");
+    avatarImg.removeAttribute("src");
+  };
+  avatarImg.src = avatarUrl;
+}
+
 async function showHistoryModal() {
   const session = await getSupabaseSession();
   if (!session) {
@@ -2351,8 +2403,15 @@ window.addEventListener("DOMContentLoaded", () => {
   updateThemeColorMeta();
   switchTab("sms");
 
+  getSupabaseSession().then((session) => {
+    setHeaderAvatar(session);
+  }).catch(() => {
+    setHeaderAvatar(null);
+  });
+
   if (window.supabase?.auth) {
     window.supabase.auth.onAuthStateChange((_event, session) => {
+      setHeaderAvatar(session || null);
       if (!session) return;
       const modal = getEl("authModal");
       const pendingAction = modal?._pendingAction;

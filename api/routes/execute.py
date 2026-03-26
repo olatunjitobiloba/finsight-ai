@@ -14,6 +14,7 @@ from services.interswitch import (
     TERMINAL_ID,
     TOKEN_URL,
     VERIFY_BASE_URL,
+    get_bank_list,
     get_billers,
     get_default_payment_code,
     get_payment_items,
@@ -192,6 +193,33 @@ async def execute_payment_items(biller_id: int):
         if key in result:
             response[key] = result.get(key)
     return response
+
+
+@router.get("/banks")
+async def execute_banks():
+    """Backward-compatible bank list endpoint for older execute flows."""
+    result = get_bank_list()
+    if result.get("status") == "success":
+        return {
+            "success": True,
+            "status": "success",
+            "data": result.get("banks", []),
+        }
+
+    message = result.get("message", "Failed to fetch banks")
+    if _is_sandbox_pending(message):
+        return {
+            "success": False,
+            "status": "sandbox_pending",
+            "message": "Sandbox pending: bank list endpoint is not yet enabled for this app.",
+            "provider_message": message,
+        }
+
+    return {
+        "success": False,
+        "status": "failed",
+        "message": message,
+    }
 
 
 @router.get("/env-check")

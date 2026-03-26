@@ -56,8 +56,22 @@
     localStorage.removeItem(ANON_KEY);
   }
 
+  function getAuthClient() {
+    return window.finsightSupabaseClient || (window.supabase?.auth ? window.supabase : null);
+  }
+
+  function getCreateClientFn() {
+    if (window.supabaseJs && typeof window.supabaseJs.createClient === "function") {
+      return window.supabaseJs.createClient;
+    }
+    if (window.supabase && typeof window.supabase.createClient === "function") {
+      return window.supabase.createClient;
+    }
+    return null;
+  }
+
   async function initializeClient() {
-    if (window.supabase?.auth) return { ok: true };
+    if (getAuthClient()) return { ok: true };
 
     await fetchPublicConfig();
 
@@ -66,18 +80,22 @@
       return { ok: false, message: "Auth is not configured yet. Please contact support." };
     }
 
-    if (!window.supabaseJs?.createClient) {
+    const createClient = getCreateClientFn();
+    if (!createClient) {
       return { ok: false, message: "Supabase SDK is not loaded." };
     }
 
     try {
-      window.supabase = window.supabaseJs.createClient(config.url, config.anonKey, {
+      const client = createClient(config.url, config.anonKey, {
         auth: {
           persistSession: true,
           autoRefreshToken: true,
           detectSessionInUrl: true
         }
       });
+      window.finsightSupabaseClient = client;
+      // Backward compatibility with existing checks in app.js.
+      window.supabase = client;
       return { ok: true };
     } catch (err) {
       return { ok: false, message: String(err?.message || "Failed to initialize Supabase client.") };
@@ -86,23 +104,25 @@
 
   async function getSession() {
     const init = await initializeClient();
-    if (!init.ok || !window.supabase?.auth) return null;
+    const client = getAuthClient();
+    if (!init.ok || !client?.auth) return null;
 
-    const { data, error } = await window.supabase.auth.getSession();
+    const { data, error } = await client.auth.getSession();
     if (error) return null;
     return data?.session || null;
   }
 
   async function signInWithGoogle(redirectTo, nextPath) {
     const init = await initializeClient();
-    if (!init.ok || !window.supabase?.auth) {
+    const client = getAuthClient();
+    if (!init.ok || !client?.auth) {
       return { error: new Error(init.message || "Supabase auth unavailable.") };
     }
 
     const safeNext = normalizePath(nextPath || "./dashboard.html");
     localStorage.setItem(NEXT_KEY, safeNext);
 
-    return window.supabase.auth.signInWithOAuth({
+    return client.auth.signInWithOAuth({
       provider: "google",
       options: {
         redirectTo: redirectTo || window.location.href,
@@ -114,8 +134,9 @@
   }
 
   async function signOut() {
-    if (!window.supabase?.auth) return { error: null };
-    return window.supabase.auth.signOut();
+    const client = getAuthClient();
+    if (!client?.auth) return { error: null };
+    return client.auth.signOut();
   }
 
   function consumeNextPath(fallbackPath) {

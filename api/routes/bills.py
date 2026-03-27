@@ -422,6 +422,15 @@ async def legacy_pay_bill(request: Request):
         if not payload:
             raise ValueError("Payload cannot be empty")
 
+        required = ["customerId", "amount", "reference", "paymentCode"]
+        missing = [field for field in required if payload.get(field) in (None, "")]
+        if missing:
+            return {
+                "success": False,
+                "error": f"Missing fields: {missing}",
+                "message": "All fields required: customerId, amount, reference, paymentCode",
+            }
+
         result = pay_vas_bill(
             payment_code=str(payload.get("paymentCode") or "").strip(),
             customer_id=str(payload.get("customerId") or "").strip(),
@@ -437,10 +446,27 @@ async def legacy_pay_bill(request: Request):
 
 
 @compat_router.get("/api/transactions")
-async def legacy_get_transaction(request_reference: str):
-    """Legacy route: GET /api/transactions?request_reference=..."""
+async def legacy_get_transaction(request: Request):
+    """Legacy route: GET /api/transactions supporting request_reference and request-reference."""
     try:
+        request_reference = (
+            request.query_params.get("request-reference")
+            or request.query_params.get("request_reference")
+            or ""
+        ).strip()
+
+        if not request_reference:
+            return {
+                "success": False,
+                "error": "reference is required",
+                "message": "Pass ?request-reference=YOUR_REF in the URL",
+            }
+
         result = get_vas_transaction_status(request_reference)
         return result.get("body", {})
     except Exception as e:
-        return {"success": False, "error": str(e), "message": "Failed to fetch transaction"}
+        return {
+            "success": False,
+            "error": str(e),
+            "message": "Failed to fetch transaction status",
+        }

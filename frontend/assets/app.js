@@ -1185,12 +1185,14 @@ function closeExecuteFlow(clearFields = false) {
     const customer = getEl("executeCustomerId");
     const amount = getEl("executeAmount");
     const paymentCode = getEl("executePaymentItemId");
+    const billerSearch = getEl("executeBillerSearch");
     if (customer) customer.value = "";
     if (amount) {
       amount.value = "";
       amount.readOnly = false;
     }
     if (paymentCode) paymentCode.value = "";
+    if (billerSearch) billerSearch.value = "";
   }
 }
 
@@ -1255,6 +1257,9 @@ const SANDBOX_ONLY_PAYMENT_CODES = new Set(["10902"]);
 const SANDBOX_TEST_CUSTOMERS = {
   "10902": { customerId: "07065564546", hint: "MTN phone number (sandbox test)" },
 };
+const EXECUTE_DEMO_BILLER_ID = "DEMO_MTN_AIRTIME_10902";
+const EXECUTE_DEMO_BILLER_NAME = "MTN Airtime (Demo - 10902)";
+let executeBillerOptions = [];
 
 function applySandboxCustomerHint(paymentCode) {
   const customerInput = getEl("executeCustomerId");
@@ -1270,13 +1275,45 @@ function applySandboxCustomerHint(paymentCode) {
   customerInput.placeholder = "Enter customer ID";
 }
 
+function renderExecuteBillerOptions(query = "") {
+  const dropdown = getEl("executeBillerId");
+  if (!dropdown) return;
+
+  const normalizedQuery = String(query || "").trim().toLowerCase();
+  const filtered = executeBillerOptions.filter((item) => {
+    if (!normalizedQuery) return true;
+    return String(item?.name || "").toLowerCase().includes(normalizedQuery);
+  });
+
+  if (filtered.length === 0) {
+    dropdown.innerHTML = '<option value="">-- No matching billers --</option>';
+    dropdown.disabled = true;
+    return;
+  }
+
+  let html = '<option value="">-- Select a biller --</option>';
+  filtered.forEach((item) => {
+    html += `<option value="${escapeHtml(String(item.id))}">${escapeHtml(String(item.name))}</option>`;
+  });
+
+  dropdown.innerHTML = html;
+  dropdown.disabled = false;
+}
+
+function onExecuteBillerSearchInput() {
+  const searchInput = getEl("executeBillerSearch");
+  renderExecuteBillerOptions(String(searchInput?.value || ""));
+}
+
 async function loadExecuteBillers() {
   try {
     const dropdown = getEl("executeBillerId");
+    const searchInput = getEl("executeBillerSearch");
     if (!dropdown) return;
 
     dropdown.innerHTML = '<option value="">Loading billers...</option>';
     dropdown.disabled = true;
+    if (searchInput) searchInput.value = "";
 
     const response = await fetch(`${API_BASE}/api/bills/billers`);
     const data = await response.json();
@@ -1292,27 +1329,31 @@ async function loadExecuteBillers() {
       return;
     }
 
-    let html = '<option value="">-- Select a biller --</option>';
+    const fetchedBillers = [];
     billerCategories.forEach((category) => {
       if (category?.billers && Array.isArray(category.billers)) {
         category.billers.forEach((biller) => {
           const id = biller?.id;
           const displayName = String(biller?.name || biller?.shortName || "").trim();
           if (id && isValidBillerName(displayName)) {
-            html += `<option value="${escapeHtml(String(id))}">${escapeHtml(displayName)}</option>`;
+            fetchedBillers.push({ id: String(id), name: displayName });
           }
         });
       }
     });
 
-    if (html === '<option value="">-- Select a biller --</option>') {
+    executeBillerOptions = [
+      { id: EXECUTE_DEMO_BILLER_ID, name: EXECUTE_DEMO_BILLER_NAME },
+      ...fetchedBillers,
+    ];
+
+    if (executeBillerOptions.length <= 1) {
       dropdown.innerHTML = '<option value="">-- No valid billers available --</option>';
       dropdown.disabled = true;
       return;
     }
 
-    dropdown.innerHTML = html;
-    dropdown.disabled = false;
+    renderExecuteBillerOptions("");
   } catch (err) {
     console.error("Failed to load billers:", err);
     const dropdown = getEl("executeBillerId");
@@ -1333,6 +1374,19 @@ async function onExecuteBillerSelected() {
     paymentItemDropdown.innerHTML = '<option value="">-- Select a biller first --</option>';
     paymentItemDropdown.disabled = true;
     if (amountInput) amountInput.readOnly = false;
+    return;
+  }
+
+  if (billerId === EXECUTE_DEMO_BILLER_ID) {
+    paymentItemDropdown.innerHTML = '<option value="">-- Select payment type --</option>'
+      + '<option value="10902" data-amount="" data-fixed="false" data-fee="0">MTN Airtime</option>';
+    paymentItemDropdown.disabled = false;
+    onExecutePaymentItemSelected();
+    setExecuteStatus(
+      "warning",
+      "Demo mode enabled.",
+      "Using MTN Airtime sandbox flow (paymentCode 10902)."
+    );
     return;
   }
 
@@ -2573,6 +2627,7 @@ window.analyzeCSV = analyzeCSV;
 window.analyzePDF = analyzePDF;
 window.fixThis = fixThis;
 window.openExecuteFlow = openExecuteFlow;
+window.onExecuteBillerSearchInput = onExecuteBillerSearchInput;
 window.closeExecuteFlow = closeExecuteFlow;
 window.confirmExecutePayment = confirmExecutePayment;
 window.onExecutePaymentItemSelected = onExecutePaymentItemSelected;

@@ -417,6 +417,14 @@
       </div>
 
       <label for="executeBillerId" class="execute-label">Select Biller</label>
+      <input
+        id="executeBillerSearch"
+        class="execute-input"
+        type="text"
+        placeholder="Type to filter billers (e.g., MTN)"
+        oninput="onExecuteBillerSearchInput()"
+        autocomplete="off"
+      />
       <select id="executeBillerId" class="execute-input" onchange="onExecuteBillerSelected()" aria-label="Select a biller">
         <option value="">-- Loading billers --</option>
       </select>

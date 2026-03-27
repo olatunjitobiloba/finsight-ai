@@ -135,6 +135,12 @@ def parse_csv_row(row: Dict, row_num: int) -> Optional[Union[Dict, List[Dict]]]:
             key = key.lower().replace("-", "_").replace(" ", "_")
             normalized_row[key] = "" if v is None else str(v).strip()
         
+        # Detect payroll/compensation datasets early: if salary field is present and hire_date exists,
+        # this is likely payroll data that should be treated as an outflow (debit/expense)
+        salary_value = get_field_value(normalized_row, ['salary', 'wage', 'wages', 'compensation', 'payroll'])
+        hire_date_value = normalized_row.get('hire_date') or normalized_row.get('hiring_date')
+        is_payroll_row = bool(salary_value and hire_date_value)
+        
         # Extract date
         date_str = get_field_value(normalized_row, [
             'date',
@@ -189,6 +195,13 @@ def parse_csv_row(row: Dict, row_num: int) -> Optional[Union[Dict, List[Dict]]]:
             ]
             composed = " | ".join([p for p in parts if p])
             description = composed or "Transaction"
+        
+        # For payroll rows, enhance description with employee name if available
+        if is_payroll_row:
+            first_name = get_field_value(normalized_row, ['first_name', 'firstname', 'fname'])
+            last_name = get_field_value(normalized_row, ['last_name', 'lastname', 'lname'])
+            employee_name = " ".join([n for n in [first_name, last_name] if n]) or "Employee"
+            description = f"Salary: {employee_name}" if employee_name else "Salary Payment"
 
         # Sales/business CSV shape: emit revenue + cost transactions per row
         # so downstream cashflow/pattern engines receive both inflow and outflow signals.
@@ -302,14 +315,22 @@ def parse_csv_row(row: Dict, row_num: int) -> Optional[Union[Dict, List[Dict]]]:
         amount = extract_amount(normalized_row)
         if amount is None:
             return None
-
-        # Extract transaction type
-        transaction_type = determine_transaction_type(normalized_row, amount)
+        
+        # For payroll rows, override transaction type to debit (expense)
+        if is_payroll_row:
+            transaction_type = 'debit'
+        else:
+            # Extract transaction type from debit/credit fields or amount sign
+            transaction_type = determine_transaction_type(normalized_row, amount)
         
         # Extract or assign category
         category = get_field_value(normalized_row, ['category', 'type'])
         if not category:
-            category = categorize_transaction(description, transaction_type)
+            # Use 'Payroll' for salary/compensation data
+            if is_payroll_row:
+                category = 'Payroll'
+            else:
+                category = categorize_transaction(description, transaction_type)
         
         return {
             "amount": abs(float(amount)),

@@ -140,6 +140,35 @@ def parse_payment_response(response: dict) -> dict:
     }
 
 
+def _extract_payment_items(body: dict) -> list:
+    """Extract payment items from varying provider response shapes."""
+    if not isinstance(body, dict):
+        return []
+
+    candidates = []
+
+    # Common top-level keys.
+    for key in ["data", "paymentItems", "paymentitems", "items", "billerPaymentItems"]:
+        value = body.get(key)
+        if isinstance(value, list):
+            candidates.extend(value)
+        elif isinstance(value, dict):
+            for sub_key in ["paymentItems", "paymentitems", "items", "data", "billerPaymentItems"]:
+                sub_value = value.get(sub_key)
+                if isinstance(sub_value, list):
+                    candidates.extend(sub_value)
+
+    # Keep only object items that look like payment-item records.
+    normalized = []
+    for item in candidates:
+        if not isinstance(item, dict):
+            continue
+        if item.get("paymentCode") or item.get("code") or item.get("itemCode"):
+            normalized.append(item)
+
+    return normalized
+
+
 # Routes
 @router.get("/billers")
 async def get_billers():
@@ -186,11 +215,12 @@ async def get_payment_items(req: PaymentItemRequest):
         result = get_vas_payment_items(req.biller_id)
         status_code = result.get("status_code")
         body = result.get("body", {})
+        items = _extract_payment_items(body)
         
         if status_code == 200:
             return {
                 "status": "success",
-                "data": body.get("data", {}),
+                "data": items,
                 "response_code": body.get("ResponseCode")
             }
         

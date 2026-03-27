@@ -1,5 +1,6 @@
 import csv
 import io
+import re
 from datetime import datetime
 from typing import Dict, List, Optional, Union
 from decimal import Decimal, InvalidOperation
@@ -23,6 +24,7 @@ def parse_csv(csv_content: Union[str, bytes]) -> Dict:
         # Parse CSV content
         transactions = []
         failed_rows = []
+        total_rows = 0
         
         # Use io.StringIO to treat string as file
         csv_file = io.StringIO(csv_content)
@@ -33,9 +35,24 @@ def parse_csv(csv_content: Union[str, bytes]) -> Dict:
         
         # Read CSV
         reader = csv.DictReader(csv_file, delimiter=delimiter)
+
+        if not reader.fieldnames:
+            return {
+                "parsed": [],
+                "failed": ["CSV parsing error: Missing header row"],
+                "total": 0,
+                "success_count": 0,
+                "fail_count": 0,
+                "success_rate": 0.0
+            }
         
         for row_num, row in enumerate(reader, start=2):  # Start at 2 (after header)
+            total_rows += 1
             try:
+                # Skip fully blank rows that can appear at EOF.
+                if not row or not any(str(v).strip() for v in row.values() if v is not None):
+                    continue
+
                 transaction = parse_csv_row(row, row_num)
                 if transaction:
                     transactions.append(transaction)
@@ -48,7 +65,6 @@ def parse_csv(csv_content: Union[str, bytes]) -> Dict:
         transactions = calculate_balances(transactions)
         
         # Prepare results
-        total_rows = row_num - 1  # Subtract 1 for header
         success_count = len(transactions)
         fail_count = len(failed_rows)
         
@@ -96,10 +112,26 @@ def parse_csv_row(row: Dict, row_num: int) -> Optional[Dict]:
     """
     try:
         # Standardize column names
-        normalized_row = {k.strip().lower(): v for k, v in row.items()}
+        normalized_row = {}
+        for k, v in row.items():
+            if k is None:
+                continue
+            key = str(k).strip().lower().replace("-", "_").replace(" ", "_")
+            normalized_row[key] = "" if v is None else str(v).strip()
         
         # Extract date
-        date_str = get_field_value(normalized_row, ['date', 'transaction_date', 'date'])
+        date_str = get_field_value(normalized_row, [
+            'date',
+            'transaction_date',
+            'transactiondatetime',
+            'transaction_datetime',
+            'order_date',
+            'ship_date',
+            'posted_date',
+            'value_date',
+            'created_at',
+            'timestamp'
+        ])
         if not date_str:
             return None
         
@@ -116,10 +148,31 @@ def parse_csv_row(row: Dict, row_num: int) -> Optional[Dict]:
         transaction_type = determine_transaction_type(normalized_row, amount)
         
         # Extract description
-        description = get_field_value(normalized_row, 
-                                   ['description', 'particulars', 'narration', 'details', 'memo'])
+        description = get_field_value(
+            normalized_row,
+            [
+                'description',
+                'particulars',
+                'narration',
+                'details',
+                'memo',
+                'remark',
+                'merchant',
+                'note',
+                'item_type',
+                'item',
+                'product'
+            ]
+        )
         if not description:
-            description = "Transaction"
+            # Build a useful fallback description for generic business/sales CSVs.
+            parts = [
+                get_field_value(normalized_row, ['item_type', 'item', 'product']),
+                get_field_value(normalized_row, ['country', 'region']),
+                get_field_value(normalized_row, ['order_id', 'invoice', 'reference'])
+            ]
+            composed = " | ".join([p for p in parts if p])
+            description = composed or "Transaction"
         
         # Extract or assign category
         category = get_field_value(normalized_row, ['category', 'type'])
@@ -153,28 +206,45 @@ def get_field_value(row: Dict, field_names: List[str]) -> Optional[str]:
 def extract_amount(row: Dict) -> Optional[float]:
     """Extract amount from various possible column formats."""
     # Try direct amount column
-    amount_fields = ['amount', 'value', 'sum']
+    amount_fields = [
+        'amount',
+        'value',
+        'sum',
+        'total',
+        'amount_paid',
+        'sales',
+        'transaction_amount',
+        'total_revenue',
+        'revenue',
+        'net_revenue',
+        'total_profit',
+        'profit',
+        'gross_profit',
+        'total_cost',
+        'cost',
+        'unit_price'
+    ]
     for field in amount_fields:
         if field in row and row[field]:
             try:
-                return float(str(row[field]).replace(',', '').replace('NGN', '').strip())
+                return clean_numeric_value(str(row[field]))
             except (ValueError, InvalidOperation):
                 continue
     
     # Try debit/credit columns
-    debit = get_field_value(row, ['debit', 'withdrawal', 'expense'])
-    credit = get_field_value(row, ['credit', 'deposit', 'income'])
+    debit = get_field_value(row, ['debit', 'withdrawal', 'expense', 'debit_amount', 'dr'])
+    credit = get_field_value(row, ['credit', 'deposit', 'income', 'credit_amount', 'cr'])
     
     if debit:
         try:
-            amount = float(debit.replace(',', '').replace('NGN', '').strip())
+            amount = clean_numeric_value(debit)
             return -abs(amount)  # Debits are negative
         except (ValueError, InvalidOperation):
             pass
     
     if credit:
         try:
-            amount = float(credit.replace(',', '').replace('NGN', '').strip())
+            amount = clean_numeric_value(credit)
             return abs(amount)  # Credits are positive
         except (ValueError, InvalidOperation):
             pass
@@ -188,10 +258,15 @@ def determine_transaction_type(row: Dict, amount: float) -> str:
     type_field = get_field_value(row, ['type', 'transaction_type', 'category'])
     if type_field:
         type_lower = type_field.lower()
-        if 'credit' in type_lower or 'income' in type_lower or 'deposit' in type_lower:
+        if 'credit' in type_lower or 'income' in type_lower or 'deposit' in type_lower or type_lower == 'cr':
             return 'credit'
-        elif 'debit' in type_lower or 'expense' in type_lower or 'withdrawal' in type_lower:
+        elif 'debit' in type_lower or 'expense' in type_lower or 'withdrawal' in type_lower or type_lower == 'dr':
             return 'debit'
+
+    # Business/sales datasets are often inflows by default.
+    sales_channel = get_field_value(row, ['sales_channel'])
+    if sales_channel:
+        return 'credit'
     
     # Determine from amount sign
     return 'credit' if amount >= 0 else 'debit'
@@ -199,25 +274,71 @@ def determine_transaction_type(row: Dict, amount: float) -> str:
 
 def parse_date(date_str: str) -> Optional[str]:
     """Parse date in various formats and return YYYY-MM-DD."""
+    cleaned = date_str.strip()
     date_formats = [
         '%Y-%m-%d',
+        '%Y-%m-%d %H:%M:%S',
+        '%Y-%m-%d %H:%M',
+        '%Y-%m-%dT%H:%M:%S',
+        '%Y-%m-%dT%H:%M:%S.%f',
         '%d/%m/%Y',
+        '%d/%m/%Y %H:%M:%S',
+        '%d/%m/%Y %H:%M',
         '%m/%d/%Y',
+        '%m/%d/%Y %H:%M:%S',
+        '%m/%d/%Y %H:%M',
         '%d-%m-%Y',
+        '%d-%m-%Y %H:%M:%S',
+        '%d-%m-%Y %H:%M',
         '%m-%d-%Y',
         '%Y/%m/%d',
+        '%Y/%m/%d %H:%M:%S',
+        '%Y/%m/%d %H:%M',
         '%d.%m.%Y',
-        '%m.%d.%Y'
+        '%m.%d.%Y',
+        '%d %b %Y',
+        '%d %B %Y',
+        '%d %b %Y %H:%M',
+        '%d %B %Y %H:%M'
     ]
     
     for fmt in date_formats:
         try:
-            date_obj = datetime.strptime(date_str.strip(), fmt)
+            date_obj = datetime.strptime(cleaned, fmt)
             return date_obj.strftime('%Y-%m-%d')
         except ValueError:
             continue
+
+    # Final fallback: common ISO-like timestamps with timezone suffix.
+    try:
+        iso_candidate = cleaned.replace('Z', '+00:00')
+        date_obj = datetime.fromisoformat(iso_candidate)
+        return date_obj.strftime('%Y-%m-%d')
+    except ValueError:
+        pass
     
     return None
+
+
+def clean_numeric_value(value: str) -> float:
+    """Normalize and parse currency-like numeric strings to float."""
+    cleaned = value.strip()
+    if not cleaned:
+        raise ValueError("Empty numeric value")
+
+    # Handle negatives in accounting format, e.g. (1,234.56)
+    is_negative = cleaned.startswith('(') and cleaned.endswith(')')
+    if is_negative:
+        cleaned = cleaned[1:-1]
+
+    cleaned = cleaned.replace('NGN', '').replace('N', '').replace(',', '')
+    cleaned = re.sub(r'[^0-9.\-]', '', cleaned)
+
+    if cleaned in {'', '-', '.', '-.'}:
+        raise ValueError(f"Invalid numeric value: {value}")
+
+    numeric = float(cleaned)
+    return -abs(numeric) if is_negative else numeric
 
 
 def categorize_transaction(description: str, transaction_type: str) -> str:

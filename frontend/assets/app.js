@@ -21,6 +21,7 @@ const ALLOW_MOCK_FALLBACK = IS_LOCALHOST;
 // State
 let currentResults = null;
 let csvContent = null;
+let csvFile = null;
 let pdfFile = null;
 let pdfDemoMode = false;
 let activeTab = "sms";
@@ -165,6 +166,7 @@ function loadDemoData() {
 
 function loadDemoCSV() {
   csvContent = DEMO_CSV;
+  csvFile = null;
   showCSVPreview("demo-statement.csv", 10);
   switchTab("csv");
   showToast("Demo CSV loaded. Click Analyze Statement.");
@@ -173,6 +175,8 @@ function loadDemoCSV() {
 function handleCSVFile(event) {
   const file = event?.target?.files?.[0];
   if (!file) return;
+
+  csvFile = file;
 
   const reader = new FileReader();
   reader.onload = (e) => {
@@ -272,22 +276,46 @@ async function analyzeCSV() {
   try {
     await animateLoadingSteps();
 
-    const form = new FormData();
-    form.append("csv_text", csvContent);
-
-    const parseResponse = await fetch(`${API_BASE}/api/parse/csv/text`, {
-      method: "POST",
-      body: form
-    });
+    let parseResponse;
+    if (csvFile) {
+      const fileForm = new FormData();
+      fileForm.append("file", csvFile);
+      parseResponse = await fetch(`${API_BASE}/api/parse/csv`, {
+        method: "POST",
+        body: fileForm
+      });
+    } else {
+      const textForm = new FormData();
+      textForm.append("csv_text", csvContent);
+      parseResponse = await fetch(`${API_BASE}/api/parse/csv/text`, {
+        method: "POST",
+        body: textForm
+      });
+    }
 
     if (!parseResponse.ok) {
-      throw new Error(`CSV parse failed: ${parseResponse.status}`);
+      let detail = "";
+      try {
+        const errBody = await parseResponse.json();
+        if (typeof errBody?.detail === "string") {
+          detail = errBody.detail;
+        } else if (errBody?.detail?.message) {
+          detail = errBody.detail.message;
+        } else if (typeof errBody?.error === "string") {
+          detail = errBody.error;
+        }
+      } catch {
+        // Keep status-only fallback if body is not JSON.
+      }
+      const suffix = detail ? ` - ${detail}` : "";
+      throw new Error(`CSV parse failed: ${parseResponse.status}${suffix}`);
     }
 
     const parseResult = await parseResponse.json();
-    const parsedTransactions = parseResult?.data?.parsed;
+    const parsedTransactions = parseResult?.data?.parsed || parseResult?.parsed;
     if (!parseResult?.success || !Array.isArray(parsedTransactions) || parsedTransactions.length === 0) {
-      throw new Error(parseResult?.error || "CSV parsing returned no transactions");
+      const firstFailure = parseResult?.data?.failed?.[0] || parseResult?.failed?.[0];
+      throw new Error(parseResult?.error || firstFailure || "CSV parsing returned no transactions");
     }
 
     const analyzeResponse = await fetchJson(`${API_BASE}/api/analyze/transactions`, {

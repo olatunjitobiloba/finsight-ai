@@ -3,6 +3,7 @@
 import base64
 import hashlib
 import hmac
+import logging
 import os
 import time
 import uuid
@@ -18,6 +19,10 @@ VERIFY_BASE_URL = os.getenv(
     "INTERSWITCH_VERIFY_BASE_URL",
     "https://api-marketplace-routing.k8.isw.la/marketplace-routing/api/v1",
 )
+MARKETPLACE_BASE_URL = os.getenv(
+    "INTERSWITCH_MARKETPLACE_BASE_URL",
+    "https://api-marketplace-routing.k8.isw.la/marketplace-routing/api/v1",
+)
 BASE_URL = os.getenv("INTERSWITCH_BASE_URL", VERIFY_BASE_URL)
 TERMINAL_ID = os.getenv("INTERSWITCH_TERMINAL_ID", "3DMO0001")
 
@@ -27,6 +32,33 @@ _token_cache = {
     "profile_token": None,
     "profile_expires_at": 0,
 }
+
+NIGERIAN_BANKS = [
+    {"code": "044", "name": "Access Bank"},
+    {"code": "023", "name": "Citibank"},
+    {"code": "050", "name": "Ecobank"},
+    {"code": "011", "name": "First Bank"},
+    {"code": "214", "name": "First City Monument Bank"},
+    {"code": "058", "name": "Guaranty Trust Bank"},
+    {"code": "030", "name": "Heritage Bank"},
+    {"code": "301", "name": "Jaiz Bank"},
+    {"code": "082", "name": "Keystone Bank"},
+    {"code": "526", "name": "Moniepoint MFB"},
+    {"code": "076", "name": "Polaris Bank"},
+    {"code": "101", "name": "Providus Bank"},
+    {"code": "221", "name": "Stanbic IBTC"},
+    {"code": "068", "name": "Standard Chartered"},
+    {"code": "232", "name": "Sterling Bank"},
+    {"code": "100", "name": "Suntrust Bank"},
+    {"code": "032", "name": "Union Bank"},
+    {"code": "033", "name": "United Bank for Africa"},
+    {"code": "215", "name": "Unity Bank"},
+    {"code": "035", "name": "Wema Bank"},
+    {"code": "057", "name": "Zenith Bank"},
+    {"code": "627", "name": "Opay"},
+    {"code": "090405", "name": "PalmPay"},
+    {"code": "000026", "name": "Kuda Bank"},
+]
 
 
 def _request_with_retry(
@@ -558,32 +590,112 @@ def check_transaction(request_reference: str) -> dict:
 
 def get_bank_list() -> dict:
     """Fetch list of banks and corresponding bank codes."""
+    url = f"{MARKETPLACE_BASE_URL}/verify/identity/account-number/bank-list"
+
+    def _normalize_bank(bank: dict) -> dict:
+        if not isinstance(bank, dict):
+            return {}
+        code = str(
+            bank.get("code")
+            or bank.get("bankCode")
+            or bank.get("institutionCode")
+            or bank.get("cbnCode")
+            or ""
+        ).strip()
+        name = str(
+            bank.get("name")
+            or bank.get("bankName")
+            or bank.get("institutionName")
+            or bank.get("displayName")
+            or ""
+        ).strip()
+        if not code or not name:
+            return {}
+        return {"code": code, "name": name}
+
     try:
-        # Bank list is served by Marketplace Verify API in current subscription.
-        url = f"{VERIFY_BASE_URL}/verify/identity/account-number/bank-list"
-        response = httpx.get(url, headers=_auth_headers(), timeout=15)
+        # Bank list is served by the Marketplace verify identity API.
+        logging.warning("[get_bank_list] Calling URL: %s", url)
+        logging.warning("[get_bank_list] MARKETPLACE_BASE_URL = %s", MARKETPLACE_BASE_URL)
+        token = get_name_inquiry_token()
+        response = httpx.get(
+            url,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+            timeout=15,
+        )
 
         # Token may be stale; force refresh once on unauthorized.
         if response.status_code == 401:
-            response = httpx.get(url, headers=_auth_headers(force_refresh=True), timeout=15)
+            logging.warning("[get_bank_list] Received 401, retrying with refreshed token")
+            token = get_name_inquiry_token(force_refresh=True)
+            response = httpx.get(
+                url,
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                },
+                timeout=15,
+            )
 
+        logging.warning("[get_bank_list] Status code: %s", response.status_code)
+        logging.warning("[get_bank_list] Raw response preview: %s", response.text[:500])
         response.raise_for_status()
         data = response.json()
+        banks = []
         if isinstance(data, list):
-            return {"status": "success", "banks": data}
-        if isinstance(data, dict):
-            return {"status": "success", "banks": data.get("data") or data.get("banks") or []}
-        return {"status": "success", "banks": []}
+            banks = data
+        elif isinstance(data, dict):
+            banks = data.get("data") or data.get("banks") or []
+
+        normalized = [_normalize_bank(bank) for bank in banks]
+        normalized = [bank for bank in normalized if bank]
+        if normalized:
+            return {"status": "success", "banks": normalized, "resolved_url": url, "source": "live"}
+
+        logging.warning("[get_bank_list] No usable banks in provider response, using fallback list")
+        return {
+            "status": "success",
+            "banks": NIGERIAN_BANKS,
+            "resolved_url": url,
+            "source": "fallback",
+        }
     except httpx.HTTPStatusError as e:
-        return {"status": "error", "message": _parse_error_message(e.response)}
+        response_text = ""
+        status_code = None
+        if e.response is not None:
+            status_code = e.response.status_code
+            response_text = e.response.text[:500]
+
+        logging.warning("[get_bank_list] HTTP error status=%s body=%s", status_code, response_text)
+        return {
+            "status": "success",
+            "message": _parse_error_message(e.response),
+            "banks": NIGERIAN_BANKS,
+            "resolved_url": url,
+            "status_code": status_code,
+            "response_preview": response_text,
+            "source": "fallback",
+        }
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        logging.warning("[get_bank_list] Exception: %s", str(e))
+        return {
+            "status": "success",
+            "message": str(e),
+            "banks": NIGERIAN_BANKS,
+            "resolved_url": url,
+            "source": "fallback",
+        }
 
 
 def verify_bank_account(account_number: str, bank_code: str) -> dict:
     """Resolve account name via Marketplace verify identity endpoint."""
     try:
-        url = f"{VERIFY_BASE_URL}/verify/identity/account-number/resolve"
+        url = f"{MARKETPLACE_BASE_URL}/verify/identity/account-number/resolve"
         payload = {
             "accountNumber": account_number,
             "bankCode": bank_code,

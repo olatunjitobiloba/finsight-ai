@@ -1184,9 +1184,12 @@ function closeExecuteFlow(clearFields = false) {
   if (clearFields) {
     const customer = getEl("executeCustomerId");
     const amount = getEl("executeAmount");
-    const paymentCode = getEl("executePaymentCode");
+    const paymentCode = getEl("executePaymentItemId");
     if (customer) customer.value = "";
-    if (amount) amount.value = "";
+    if (amount) {
+      amount.value = "";
+      amount.readOnly = false;
+    }
     if (paymentCode) paymentCode.value = "";
   }
 }
@@ -1302,12 +1305,14 @@ async function loadExecuteBillers() {
 async function onExecuteBillerSelected() {
   const billerId = String(getEl("executeBillerId")?.value || "").trim();
   const paymentItemDropdown = getEl("executePaymentItemId");
+  const amountInput = getEl("executeAmount");
 
   if (!paymentItemDropdown) return;
 
   if (!billerId) {
     paymentItemDropdown.innerHTML = '<option value="">-- Select a biller first --</option>';
     paymentItemDropdown.disabled = true;
+    if (amountInput) amountInput.readOnly = false;
     return;
   }
 
@@ -1315,19 +1320,26 @@ async function onExecuteBillerSelected() {
     paymentItemDropdown.innerHTML = '<option value="">Loading payment types...</option>';
     paymentItemDropdown.disabled = true;
 
-    const response = await fetch(`${API_BASE}/api/bills/items`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ biller_id: Number(billerId) })
-    });
-    const data = await response.json();
+    const paymentItemRequests = [
+      () => fetch(`${API_BASE}/api/bills/items`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ biller_id: Number(billerId) })
+      }),
+      () => fetch(`${API_BASE}/api/execute/payment-items?biller_id=${encodeURIComponent(billerId)}`),
+    ];
 
-    if (!response.ok || data?.status === "error") {
-      paymentItemDropdown.innerHTML = '<option value="">-- Error loading payment types --</option>';
-      return;
+    let items = [];
+
+    for (const request of paymentItemRequests) {
+      const response = await request();
+      const data = await response.json();
+
+      if (response.ok && data?.status !== "error" && Array.isArray(data?.data)) {
+        items = data.data;
+        break;
+      }
     }
-
-    const items = Array.isArray(data?.data) ? data.data : [];
     
     if (items.length === 0) {
       paymentItemDropdown.innerHTML = '<option value="">-- No payment types available --</option>';
@@ -1337,18 +1349,47 @@ async function onExecuteBillerSelected() {
     let html = '<option value="">-- Select payment type --</option>';
     items.forEach((item) => {
       const code = item?.paymentCode || item?.code || "";
-      const name = item?.name || "Unknown";
+      const name = item?.paymentitemname || item?.name || item?.itemName || "Unknown";
+      const amount = item?.amount ?? "";
+      const isAmountFixed = item?.isAmountFixed ?? "";
+      const fee = item?.itemFee ?? "";
       if (code) {
-        html += `<option value="${escapeHtml(code)}">${escapeHtml(name)}</option>`;
+        html += `<option value="${escapeHtml(code)}" data-amount="${escapeHtml(String(amount))}" data-fixed="${escapeHtml(String(isAmountFixed))}" data-fee="${escapeHtml(String(fee))}">${escapeHtml(name)}</option>`;
       }
     });
 
     paymentItemDropdown.innerHTML = html;
     paymentItemDropdown.disabled = false;
+    onExecutePaymentItemSelected();
   } catch (err) {
     console.error("Failed to load payment items:", err);
     paymentItemDropdown.innerHTML = '<option value="">-- Error loading payment types --</option>';
   }
+}
+
+function onExecutePaymentItemSelected() {
+  const paymentItemDropdown = getEl("executePaymentItemId");
+  const amountInput = getEl("executeAmount");
+
+  if (!paymentItemDropdown || !amountInput) return;
+
+  const selectedOption = paymentItemDropdown.options[paymentItemDropdown.selectedIndex];
+  if (!selectedOption || !selectedOption.value) {
+    amountInput.readOnly = false;
+    return;
+  }
+
+  const rawFixed = String(selectedOption.dataset.fixed || "").toLowerCase();
+  const isFixed = ["true", "1", "yes"].includes(rawFixed);
+  const amount = Number(String(selectedOption.dataset.amount || "").trim());
+
+  if (isFixed && Number.isFinite(amount) && amount > 0) {
+    amountInput.value = String(amount);
+    amountInput.readOnly = true;
+    return;
+  }
+
+  amountInput.readOnly = false;
 }
 
 async function confirmExecutePayment() {
@@ -1490,11 +1531,27 @@ async function openBankVerifyFlow() {
   if (dropdown) {
     dropdown.innerHTML = '<option value="">-- Loading banks --</option>';
     try {
-      const response = await fetch(`${API_BASE}/api/bank-verify/banks`);
-      const data = await response.json();
+      const bankEndpoints = [
+        `${API_BASE}/api/bank-verify/banks`,
+        `${API_BASE}/api/execute/banks`,
+      ];
 
-      if (response.ok && data?.status === "success" && data?.data) {
-        const banks = data.data;
+      let banks = [];
+      let reason = "";
+
+      for (const endpoint of bankEndpoints) {
+        const response = await fetch(endpoint);
+        const data = await response.json();
+
+        if (response.ok && (data?.status === "success" || data?.success) && Array.isArray(data?.data)) {
+          banks = data.data;
+          break;
+        }
+
+        reason = String(data?.message || `Request failed (${response.status})`).trim();
+      }
+
+      if (banks.length > 0) {
         dropdown.innerHTML = '<option value="">-- Select a bank --</option>';
         banks.forEach((bank) => {
           const opt = document.createElement("option");
@@ -1504,11 +1561,10 @@ async function openBankVerifyFlow() {
         });
       } else {
         dropdown.innerHTML = '<option value="">Bank list unavailable</option>';
-        const reason = String(data?.message || `Request failed (${response.status})`).trim();
         setBankVerifyStatus(
           "pending",
           "Unable to load banks right now.",
-          reason
+          reason || "No bank list endpoint returned usable data."
         );
       }
     } catch (err) {
@@ -2489,6 +2545,7 @@ window.fixThis = fixThis;
 window.openExecuteFlow = openExecuteFlow;
 window.closeExecuteFlow = closeExecuteFlow;
 window.confirmExecutePayment = confirmExecutePayment;
+window.onExecutePaymentItemSelected = onExecutePaymentItemSelected;
 window.openBankVerifyFlow = openBankVerifyFlow;
 window.closeBankVerifyFlow = closeBankVerifyFlow;
 window.confirmBankVerify = confirmBankVerify;

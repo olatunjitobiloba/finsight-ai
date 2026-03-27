@@ -14,6 +14,7 @@ from services.interswitch import (
     TERMINAL_ID,
     TOKEN_URL,
     VERIFY_BASE_URL,
+    get_bank_list,
     get_billers,
     get_default_payment_code,
     get_payment_items,
@@ -194,6 +195,46 @@ async def execute_payment_items(biller_id: int):
     return response
 
 
+@router.get("/banks")
+async def execute_banks():
+    """Backward-compatible bank list endpoint for older execute flows."""
+    result = get_bank_list()
+    if result.get("status") == "success":
+        response = {
+            "success": True,
+            "status": "success",
+            "data": result.get("banks", []),
+        }
+        if result.get("source"):
+            response["source"] = result.get("source")
+        if result.get("message"):
+            response["message"] = result.get("message")
+        if result.get("resolved_url"):
+            response["resolved_url"] = result.get("resolved_url")
+        return response
+
+    message = result.get("message", "Failed to fetch banks")
+    if _is_sandbox_pending(message):
+        return {
+            "success": False,
+            "status": "sandbox_pending",
+            "message": "Sandbox pending: bank list endpoint is not yet enabled for this app.",
+            "provider_message": message,
+        }
+
+    return {
+        "success": False,
+        "status": "failed",
+        "message": message,
+        "debug": {
+            "verify_base_url": VERIFY_BASE_URL,
+            "full_url": result.get("resolved_url") or f"{VERIFY_BASE_URL}/verify/identity/account-number/bank-list",
+            "status_code": result.get("status_code"),
+            "response_preview": result.get("response_preview", ""),
+        },
+    }
+
+
 @router.get("/env-check")
 async def execute_env_check():
     """Safe env diagnostics for Interswitch integration troubleshooting."""
@@ -277,4 +318,85 @@ async def execute_status():
         "status": "sandbox_pending" if pending else "failed",
         "message": message,
         "checks": checks,
+    }
+
+
+def _mask_secret(value: str, prefix: int = 4, suffix: int = 4) -> str:
+    text = (value or "").strip()
+    if not text:
+        return "NOT SET"
+    if len(text) <= prefix + suffix:
+        return "TOO SHORT"
+    return f"{text[:prefix]}...{text[-suffix:]}"
+
+
+def _env_family(url: str) -> str:
+    text = (url or "").strip().lower()
+    if "sandbox" in text:
+        return "sandbox"
+    if "qa" in text:
+        return "qa"
+    if "api.interswitchng.com" in text:
+        return "production"
+    return "unknown"
+
+
+@router.get("/isw-config")
+async def execute_isw_config():
+    """Safe diagnostic endpoint showing effective Interswitch config alignment."""
+    qt_v2_configured = (os.getenv("INTERSWITCH_QT_V2_BASE_URL") or "").strip()
+    qt_base_configured = (os.getenv("INTERSWITCH_QT_BASE_URL") or "").strip()
+    token_configured = (os.getenv("INTERSWITCH_TOKEN_URL") or "").strip()
+    verify_configured = (os.getenv("INTERSWITCH_VERIFY_BASE_URL") or "").strip()
+
+    qt_v2_effective = qt_v2_configured or "https://sandbox.interswitchng.com/api/v2/quickteller"
+    qt_base_effective = qt_base_configured or "https://qa.interswitchng.com/quicktellerservice/api/v5"
+    token_effective = token_configured or "https://qa.interswitchng.com/passport/oauth/token"
+    verify_effective = verify_configured or "https://api-marketplace-routing.k8.isw.la/marketplace-routing/api/v1"
+
+    token_env = _env_family(token_effective)
+    api_env = _env_family(qt_v2_effective)
+    matched = token_env == api_env and token_env != "unknown"
+
+    return {
+        "success": True,
+        "status": "ok",
+        "urls": {
+            "INTERSWITCH_QT_V2_BASE_URL": {
+                "configured": qt_v2_configured or "NOT SET",
+                "effective": qt_v2_effective,
+            },
+            "INTERSWITCH_QT_BASE_URL": {
+                "configured": qt_base_configured or "NOT SET",
+                "effective": qt_base_effective,
+            },
+            "INTERSWITCH_TOKEN_URL": {
+                "configured": token_configured or "NOT SET",
+                "effective": token_effective,
+            },
+            "INTERSWITCH_VERIFY_BASE_URL": {
+                "configured": verify_configured or "NOT SET",
+                "effective": verify_effective,
+            },
+        },
+        "credentials": {
+            "client_id": _mask_secret(os.getenv("INTERSWITCH_CLIENT_ID") or ""),
+            "client_secret": _mask_secret(
+                os.getenv("INTERSWITCH_CLIENT_SECRET")
+                or os.getenv("INTERSWITCH_SECRET_KEY")
+                or os.getenv("INTERSWITCH_SECRET")
+                or ""
+            ),
+            "terminal_id": _mask_secret(os.getenv("INTERSWITCH_TERMINAL_ID") or "3DMO0001"),
+        },
+        "alignment": {
+            "token_env": token_env,
+            "api_env": api_env,
+            "matched": matched,
+            "verdict": (
+                "Environments aligned."
+                if matched
+                else f"MISMATCH - token={token_env} api={api_env}. Set both to the same environment."
+            ),
+        },
     }

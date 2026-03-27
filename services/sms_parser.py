@@ -90,10 +90,56 @@ def _normalize_transaction_schema(parsed: Dict) -> Dict:
     tx_type = (parsed.get("type") or "").lower().strip()
     parsed["type"] = "credit" if tx_type == "credit" else "debit"
 
-    if not parsed.get("category"):
-        parsed["category"] = "Uncategorized"
+    parsed["description"] = _clean_description(parsed.get("description") or "Transaction")
+
+    category = str(parsed.get("category") or "").strip()
+    if not category or category.lower() == "uncategorized":
+        parsed["category"] = _categorize_transaction(parsed["description"], parsed["type"])
 
     return parsed
+
+
+def _clean_description(description: str) -> str:
+    text = str(description or "").strip()
+    if not text:
+        return "Transaction"
+
+    # Strip trailing balance fragments that some bank formats append to description.
+    text = re.sub(r"\.?\s*(bal|avail\s*bal)\s*:\s*(ngn|n)?\s*[\d,]+(?:\.\d{1,2})?.*$", "", text, flags=re.IGNORECASE)
+    return text.strip().rstrip(".") or "Transaction"
+
+
+def _categorize_transaction(description: str, tx_type: str) -> str:
+    desc = (description or "").lower()
+    normalized_type = (tx_type or "").lower().strip()
+
+    if normalized_type == "credit":
+        income_keywords = [
+            "salary", "allowance", "bonus", "project", "freelance", "consultation",
+            "payment received", "credited", "refund"
+        ]
+        if any(kw in desc for kw in income_keywords):
+            return "Income"
+        return "Transfers"
+
+    categories = {
+        "Savings": ["savings", "piggyvest", "cowrywise", "investment", "stash", "save"],
+        "Bills": ["rent", "dstv", "gotv", "electricity", "ikedc", "ekedc", "aedc", "phcn", "airtel data", "data", "airtime", "subscription", "utility"],
+        "Transport": ["uber", "bolt", "ride", "fuel", "transport", "trip"],
+        "Food": ["shoprite", "kfc", "chicken republic", "restaurant", "dinner", "grocer", "supermarket", "food"],
+        "Shopping": ["jumia", "shopping", "fashion", "store", "electronics"],
+        "Entertainment": ["cinema", "club", "outing", "netflix", "showmax", "spotify", "event"],
+    }
+
+    for category, keywords in categories.items():
+        if any(kw in desc for kw in keywords):
+            return category
+
+    transfer_keywords = ["transfer", "pos", "atm", "withdraw", "trx", "trf"]
+    if any(kw in desc for kw in transfer_keywords):
+        return "Transfers"
+
+    return "Uncategorized"
 
 
 def _is_valid_transaction(parsed: Optional[Dict]) -> bool:
@@ -340,7 +386,7 @@ def parse_access_bank_sms(sms_text: str) -> Dict:
             result["balance"] = _clean_money(alt_balance_match.group(1))
     
     # Extract description
-    desc_match = re.search(r'Desc:\s*(.*)', sms_text, re.IGNORECASE)
+    desc_match = re.search(r'Desc:\s*(.*?)(?:\.\s*Bal:|$)', sms_text, re.IGNORECASE)
 
     if desc_match:
         result["description"] = desc_match.group(1).strip()

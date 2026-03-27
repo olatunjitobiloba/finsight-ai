@@ -112,9 +112,10 @@ def generate_genuine_actions(
             })
 
     # ── ACTION 3: Electricity bill (if detected)
-    electricity_spend = cat_totals.get("Electricity", 0)
+    electricity_keywords = ["ikedc", "ekedc", "aedc", "electricity", "prepaid", "token"]
+    electricity_spend = _sum_matching_debit_amount(raw_transactions, electricity_keywords)
     electricity_txns  = _count_category_transactions(
-        raw_transactions, ["ikedc","ekedc","aedc","electricity","prepaid","token"]
+        raw_transactions, electricity_keywords
     )
     if electricity_txns >= 1:
         avg_electricity = round(electricity_spend / max(electricity_txns, 1), 0)
@@ -314,11 +315,28 @@ def _category_percentages(totals: dict, total_spending: float) -> dict:
 def _count_category_transactions(transactions: list, keywords: list) -> int:
     count = 0
     for t in transactions:
+        if (t.get("type") or "").lower() != "debit":
+            continue
         desc = (t.get("description") or "").lower()
         cat  = (t.get("category") or "").lower()
         if any(kw in desc or kw in cat for kw in keywords):
             count += 1
     return count
+
+
+def _sum_matching_debit_amount(transactions: list, keywords: list) -> float:
+    total = 0.0
+    for t in transactions:
+        if (t.get("type") or "").lower() != "debit":
+            continue
+        desc = (t.get("description") or "").lower()
+        cat = (t.get("category") or "").lower()
+        if any(kw in desc or kw in cat for kw in keywords):
+            try:
+                total += float(t.get("amount") or 0)
+            except (TypeError, ValueError):
+                continue
+    return total
 
 
 def _detect_network(transactions: list) -> str:

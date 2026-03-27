@@ -148,14 +148,18 @@ def parse_csv_row(row: Dict, row_num: int) -> Optional[Union[Dict, List[Dict]]]:
             'posted_date',
             'value_date',
             'created_at',
-            'timestamp'
+            'timestamp',
+            'hire_date',
+            'hiring_date'
         ])
-        if not date_str:
-            return None
         
-        parsed_date = parse_date(date_str)
-        if not parsed_date:
-            return None
+        parsed_date = None
+        if date_str:
+            parsed_date = parse_date(date_str)
+        
+        # Use today's date as fallback if date parsing failed or no date field was found.
+        # This allows payroll/salary CSVs with unparseable dates to still process.
+        fallback_date = parsed_date or datetime.now().strftime('%Y-%m-%d')
         
         # Extract description
         description = get_field_value(
@@ -204,7 +208,7 @@ def parse_csv_row(row: Dict, row_num: int) -> Optional[Union[Dict, List[Dict]]]:
                     "type": "credit",
                     "category": sales_category,
                     "description": f"{description} (Revenue)",
-                    "transaction_date": parsed_date,
+                    "transaction_date": fallback_date,
                     "source": "csv",
                     "bank": "CSV Import",
                     "balance": 0.0
@@ -216,7 +220,7 @@ def parse_csv_row(row: Dict, row_num: int) -> Optional[Union[Dict, List[Dict]]]:
                     "type": "debit",
                     "category": "Operations",
                     "description": f"{description} (Cost)",
-                    "transaction_date": parsed_date,
+                    "transaction_date": fallback_date,
                     "source": "csv",
                     "bank": "CSV Import",
                     "balance": 0.0
@@ -231,7 +235,7 @@ def parse_csv_row(row: Dict, row_num: int) -> Optional[Union[Dict, List[Dict]]]:
                     "type": "debit",
                     "category": "Operations",
                     "description": f"{description} (Estimated Cost)",
-                    "transaction_date": parsed_date,
+                    "transaction_date": fallback_date,
                     "source": "csv",
                     "bank": "CSV Import",
                     "balance": 0.0
@@ -266,7 +270,7 @@ def parse_csv_row(row: Dict, row_num: int) -> Optional[Union[Dict, List[Dict]]]:
                         "type": "credit",
                         "category": invoice_category,
                         "description": f"{description} (Revenue)",
-                        "transaction_date": parsed_date,
+                        "transaction_date": fallback_date,
                         "source": "csv",
                         "bank": "CSV Import",
                         "balance": 0.0
@@ -276,7 +280,7 @@ def parse_csv_row(row: Dict, row_num: int) -> Optional[Union[Dict, List[Dict]]]:
                         "type": "debit",
                         "category": "Operations",
                         "description": f"{description} (Estimated Cost)",
-                        "transaction_date": parsed_date,
+                        "transaction_date": fallback_date,
                         "source": "csv",
                         "bank": "CSV Import",
                         "balance": 0.0
@@ -288,7 +292,7 @@ def parse_csv_row(row: Dict, row_num: int) -> Optional[Union[Dict, List[Dict]]]:
                     "type": "debit",
                     "category": "Returns",
                     "description": f"{description} (Return)",
-                    "transaction_date": parsed_date,
+                    "transaction_date": fallback_date,
                     "source": "csv",
                     "bank": "CSV Import",
                     "balance": 0.0
@@ -312,7 +316,7 @@ def parse_csv_row(row: Dict, row_num: int) -> Optional[Union[Dict, List[Dict]]]:
             "type": transaction_type,
             "category": category,
             "description": description.strip(),
-            "transaction_date": parsed_date,
+            "transaction_date": fallback_date,
             "source": "csv",
             "bank": "CSV Import",
             "balance": 0.0  # Will be calculated later

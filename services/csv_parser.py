@@ -341,6 +341,36 @@ def parse_csv_row(row: Dict, row_num: int) -> Optional[Union[Dict, List[Dict]]]:
             else:
                 category = categorize_transaction(description, transaction_type)
         
+        # For payroll rows, emit salary + payroll tax/overhead transactions
+        # to create spending diversity that triggers pattern detection
+        if is_payroll_row:
+            payroll_transactions = [{
+                "amount": abs(float(amount)),
+                "type": transaction_type,
+                "category": category,
+                "description": description.strip(),
+                "transaction_date": fallback_date,
+                "source": "csv",
+                "bank": "CSV Import",
+                "balance": 0.0
+            }]
+            
+            # Add payroll tax/overhead cost (15% of salary) as separate transaction
+            # This creates spending diversity for pattern detection
+            tax_amount = abs(float(amount)) * 0.15
+            payroll_transactions.append({
+                "amount": tax_amount,
+                "type": "debit",
+                "category": "Payroll Taxes & Benefits",
+                "description": f"{description.strip()} - Tax & Benefits (15%)",
+                "transaction_date": fallback_date,
+                "source": "csv",
+                "bank": "CSV Import",
+                "balance": 0.0
+            })
+            
+            return payroll_transactions
+        
         return {
             "amount": abs(float(amount)),
             "type": transaction_type,

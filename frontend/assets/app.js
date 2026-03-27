@@ -1423,8 +1423,8 @@ async function confirmExecutePayment() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        customer_id: customerId,
-        payment_code: paymentCode
+        customerId: customerId,
+        paymentCode: paymentCode
       })
     });
 
@@ -1444,11 +1444,11 @@ async function confirmExecutePayment() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        customer_id: customerId,
-        payment_code: paymentCode,
+        customerId: customerId,
+        paymentCode: paymentCode,
         amount: amountKobo,
-        customer_mobile: "",
-        customer_email: ""
+        customerMobile: "",
+        customerEmail: ""
       })
     });
 

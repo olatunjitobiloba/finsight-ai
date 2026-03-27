@@ -2,7 +2,7 @@
 
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 
 from services import (
     get_vas_billers,
@@ -24,19 +24,51 @@ class PaymentItemRequest(BaseModel):
 
 class ValidateCustomerRequest(BaseModel):
     """Validate customer before payment."""
-    customer_id: str = Field(..., min_length=1, description="Customer ID from biller")
-    payment_code: str = Field(..., min_length=1, description="Payment code (e.g., 10902)")
+    customer_id: str = Field(
+        ...,
+        min_length=1,
+        description="Customer ID from biller",
+        validation_alias=AliasChoices("customer_id", "customerId"),
+    )
+    payment_code: str = Field(
+        ...,
+        min_length=1,
+        description="Payment code (e.g., 10902)",
+        validation_alias=AliasChoices("payment_code", "paymentCode"),
+    )
 
 
 class PayBillRequest(BaseModel):
     """Initiate bill payment."""
-    customer_id: str = Field(..., min_length=1, description="Customer ID")
-    payment_code: str = Field(..., min_length=1, description="Payment code")
+    customer_id: str = Field(
+        ...,
+        min_length=1,
+        description="Customer ID",
+        validation_alias=AliasChoices("customer_id", "customerId"),
+    )
+    payment_code: str = Field(
+        ...,
+        min_length=1,
+        description="Payment code",
+        validation_alias=AliasChoices("payment_code", "paymentCode"),
+    )
     amount: int = Field(..., gt=0, description="Amount in kobo (minimum 20000 for ₦200)")
-    customer_mobile: Optional[str] = Field(None, description="Customer phone number")
-    customer_email: Optional[str] = Field(None, description="Customer email")
+    customer_mobile: Optional[str] = Field(
+        None,
+        description="Customer phone number",
+        validation_alias=AliasChoices("customer_mobile", "customerMobile"),
+    )
+    customer_email: Optional[str] = Field(
+        None,
+        description="Customer email",
+        validation_alias=AliasChoices("customer_email", "customerEmail"),
+    )
     reference: Optional[str] = Field(None, description="Unique reference; auto-generated if omitted")
-    terminal_id: Optional[str] = Field("3DMO0001", description="Terminal ID for transaction")
+    terminal_id: Optional[str] = Field(
+        "3DMO0001",
+        description="Terminal ID for transaction",
+        validation_alias=AliasChoices("terminal_id", "terminalId"),
+    )
 
 
 class TransactionStatusRequest(BaseModel):

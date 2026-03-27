@@ -6,6 +6,9 @@ from typing import Dict, List, Optional, Union
 from decimal import Decimal, InvalidOperation
 
 
+INVOICE_ESTIMATED_COST_RATIO = 0.62
+
+
 def parse_csv(csv_content: Union[str, bytes]) -> Dict:
     """
     Parse CSV transaction data and return structured format.
@@ -213,6 +216,60 @@ def parse_csv_row(row: Dict, row_num: int) -> Optional[Union[Dict, List[Dict]]]:
 
             if sales_transactions:
                 return sales_transactions
+
+        # Invoice-ledger shape (e.g. InvoiceNo/Quantity/UnitPrice) with no explicit
+        # debit/cost columns: emit revenue + estimated cost so runway/pattern engines
+        # have both inflow and outflow signals.
+        quantity_raw = get_field_value(normalized_row, ['quantity', 'qty'])
+        unit_price_raw = get_field_value(normalized_row, ['unit_price', 'unitprice', 'price'])
+        has_explicit_flow_columns = any(
+            get_field_value(normalized_row, [name])
+            for name in ['debit', 'credit', 'total_cost', 'cost', 'total_revenue', 'revenue']
+        )
+        if quantity_raw and unit_price_raw and not has_explicit_flow_columns:
+            try:
+                quantity = clean_numeric_value(quantity_raw)
+                unit_price = clean_numeric_value(unit_price_raw)
+                line_total = quantity * unit_price
+            except (ValueError, InvalidOperation):
+                line_total = 0
+
+            if line_total > 0:
+                estimated_cost = abs(line_total) * INVOICE_ESTIMATED_COST_RATIO
+                invoice_category = get_field_value(normalized_row, ['category', 'item_type']) or 'Sales'
+                return [
+                    {
+                        "amount": abs(float(line_total)),
+                        "type": "credit",
+                        "category": invoice_category,
+                        "description": f"{description} (Revenue)",
+                        "transaction_date": parsed_date,
+                        "source": "csv",
+                        "bank": "CSV Import",
+                        "balance": 0.0
+                    },
+                    {
+                        "amount": abs(float(estimated_cost)),
+                        "type": "debit",
+                        "category": "Operations",
+                        "description": f"{description} (Estimated Cost)",
+                        "transaction_date": parsed_date,
+                        "source": "csv",
+                        "bank": "CSV Import",
+                        "balance": 0.0
+                    }
+                ]
+            if line_total < 0:
+                return {
+                    "amount": abs(float(line_total)),
+                    "type": "debit",
+                    "category": "Returns",
+                    "description": f"{description} (Return)",
+                    "transaction_date": parsed_date,
+                    "source": "csv",
+                    "bank": "CSV Import",
+                    "balance": 0.0
+                }
 
         # Extract amount
         amount = extract_amount(normalized_row)

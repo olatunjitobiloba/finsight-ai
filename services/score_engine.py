@@ -551,6 +551,11 @@ def detect_patterns(transactions: list) -> dict:
     if p0:
         patterns.append(p0)
 
+    if business_mode:
+        p_business = _detect_business_revenue_concentration(credits)
+        if p_business:
+            patterns.append(p_business)
+
     if not debits:
         return {
             "patterns": patterns,
@@ -558,11 +563,7 @@ def detect_patterns(transactions: list) -> dict:
             "count": len(patterns)
         }
 
-    if business_mode:
-        p_business = _detect_business_revenue_concentration(credits)
-        if p_business:
-            patterns.append(p_business)
-    else:
+    if not business_mode:
         # ── Pattern 1: Weekend Overspending
         p1 = _detect_weekend_spending(debits)
         if p1:

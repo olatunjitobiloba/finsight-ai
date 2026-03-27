@@ -218,7 +218,7 @@ Outputs are generated dynamically from user data, not hardcoded responses.
 
 ## Team Contributions
 
-### Olatunji Oluwatobiloba (Toby) — ML Engineer
+### Olatunji Oluwatobiloba — ML Engineer
 - Designed and implemented the Financial Health Score engine across 5 pillars
 - Built the AI action generator (data-driven, personalized recommendations)
 - Developed the spending behavior detection engine (burn rate, temporal patterns)

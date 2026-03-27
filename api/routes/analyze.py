@@ -31,6 +31,23 @@ from services.db import save_transaction, get_user_transactions
 
 router = APIRouter()
 
+MAX_DB_SAVE_TRANSACTIONS = 500
+MAX_ANALYSIS_TRANSACTIONS = 4000
+MAX_RESPONSE_TRANSACTIONS = 2000
+MAX_DIRECT_DB_WRITE_TRANSACTIONS = 800
+
+
+def _sample_transactions(transactions: List[Dict[str, Any]], max_count: int) -> List[Dict[str, Any]]:
+    """Downsample while preserving sequence for large payload performance."""
+    if len(transactions) <= max_count:
+        return transactions
+
+    step = max(1, len(transactions) // max_count)
+    sampled = transactions[::step]
+    if len(sampled) > max_count:
+        sampled = sampled[:max_count]
+    return sampled
+
 
 # ── REQUEST MODEL ──────────────────────────────────
 class AnalyzeRequest(BaseModel):
@@ -102,8 +119,9 @@ async def analyze(request: AnalyzeRequest):
 
     # ── 5. Save to Supabase (non-blocking — don't fail if DB is slow)
     saved_count = 0
+    db_candidates = transactions[:MAX_DB_SAVE_TRANSACTIONS]
     try:
-        for txn in transactions:
+        for txn in db_candidates:
             result = save_transaction(request.user_id, txn)
             if result:
                 saved_count += 1
@@ -121,8 +139,9 @@ async def analyze(request: AnalyzeRequest):
                 break
 
     # ── 7. Run score engine
+    analysis_transactions = _sample_transactions(transactions, MAX_ANALYSIS_TRANSACTIONS)
     try:
-        score_result = calculate_score(transactions)
+        score_result = calculate_score(analysis_transactions)
     except Exception as e:
         score_result = {
             "score": 0,
@@ -135,7 +154,7 @@ async def analyze(request: AnalyzeRequest):
 
     # ── 8. Run days-to-zero predictor
     try:
-        days_result = days_to_zero(transactions, current_balance=balance)
+        days_result = days_to_zero(analysis_transactions, current_balance=balance)
     except Exception as e:
         days_result = {
             "days_remaining": None,
@@ -146,7 +165,7 @@ async def analyze(request: AnalyzeRequest):
 
     # ── 9. Run behavior pattern detection
     try:
-        pattern_result = detect_patterns(transactions)
+        pattern_result = detect_patterns(analysis_transactions)
     except Exception as e:
         pattern_result = {"patterns": [], "count": 0, "top_pattern": None}
 
@@ -156,7 +175,7 @@ async def analyze(request: AnalyzeRequest):
             score_result,
             days_result,
             pattern_result,
-            raw_transactions=transactions,
+            raw_transactions=analysis_transactions,
         )
     except Exception as e:
         actions = []
@@ -177,12 +196,15 @@ async def analyze(request: AnalyzeRequest):
             "sms_received":   len(sms_lines),
             "transactions_parsed": len(transactions),
             "transactions_saved":  saved_count,
+            "db_save_limited": len(transactions) > MAX_DB_SAVE_TRANSACTIONS,
+            "analysis_sampled": len(analysis_transactions) < len(transactions),
+            "analysis_sample_size": len(analysis_transactions),
             "parse_rate": parse_result.get("success_rate", 0),
             "bank_type_used": request.bank_type
         },
 
         # Transaction list (for frontend timeline)
-        "transactions": transactions
+        "transactions": _sample_transactions(transactions, MAX_RESPONSE_TRANSACTIONS)
     }
 
 
@@ -218,14 +240,17 @@ async def analyze_transactions(request: AnalyzeTransactionsRequest):
     
     # ── 2. Save to Supabase (non-blocking)
     saved_count = 0
-    try:
-        for txn in transactions:
-            result = save_transaction(request.user_id, txn)
-            if result:
-                saved_count += 1
-    except Exception:
-        # DB failure should NOT break the analysis
-        pass
+    db_write_skipped = len(transactions) > MAX_DIRECT_DB_WRITE_TRANSACTIONS
+    if not db_write_skipped:
+        db_candidates = transactions[:MAX_DB_SAVE_TRANSACTIONS]
+        try:
+            for txn in db_candidates:
+                result = save_transaction(request.user_id, txn)
+                if result:
+                    saved_count += 1
+        except Exception:
+            # DB failure should NOT break the analysis
+            pass
     
     # ── 3. Get balance from transactions if not provided
     balance = request.balance
@@ -236,8 +261,9 @@ async def analyze_transactions(request: AnalyzeTransactionsRequest):
                 break
     
     # ── 4. Run score engine
+    analysis_transactions = _sample_transactions(transactions, MAX_ANALYSIS_TRANSACTIONS)
     try:
-        score_result = calculate_score(transactions)
+        score_result = calculate_score(analysis_transactions)
     except Exception as e:
         score_result = {
             "score": 0,
@@ -250,7 +276,7 @@ async def analyze_transactions(request: AnalyzeTransactionsRequest):
     
     # ── 5. Run days-to-zero predictor
     try:
-        days_result = days_to_zero(transactions, current_balance=balance)
+        days_result = days_to_zero(analysis_transactions, current_balance=balance)
     except Exception as e:
         days_result = {
             "days_remaining": None,
@@ -261,7 +287,7 @@ async def analyze_transactions(request: AnalyzeTransactionsRequest):
     
     # ── 6. Run behavior pattern detection
     try:
-        pattern_result = detect_patterns(transactions)
+        pattern_result = detect_patterns(analysis_transactions)
     except Exception as e:
         pattern_result = {"patterns": [], "count": 0, "top_pattern": None}
     
@@ -271,7 +297,7 @@ async def analyze_transactions(request: AnalyzeTransactionsRequest):
             score_result,
             days_result,
             pattern_result,
-            raw_transactions=transactions,
+            raw_transactions=analysis_transactions,
         )
     except Exception as e:
         actions = []
@@ -291,11 +317,15 @@ async def analyze_transactions(request: AnalyzeTransactionsRequest):
         "parse_summary": {
             "source": "direct",
             "transactions_received": len(transactions),
-            "transactions_saved":  saved_count
+            "transactions_saved":  saved_count,
+            "db_write_skipped": db_write_skipped,
+            "db_save_limited": len(transactions) > MAX_DB_SAVE_TRANSACTIONS,
+            "analysis_sampled": len(analysis_transactions) < len(transactions),
+            "analysis_sample_size": len(analysis_transactions)
         },
         
         # Transaction list (for frontend timeline)
-        "transactions": transactions
+        "transactions": _sample_transactions(transactions, MAX_RESPONSE_TRANSACTIONS)
     }
 
 

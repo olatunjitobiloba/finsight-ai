@@ -1250,6 +1250,26 @@ function isValidBillerName(name) {
   return true;
 }
 
+// Demo mode: keep execute flow on sandbox-confirmed payment codes.
+const SANDBOX_ONLY_PAYMENT_CODES = new Set(["10902"]);
+const SANDBOX_TEST_CUSTOMERS = {
+  "10902": { customerId: "07065564546", hint: "MTN phone number (sandbox test)" },
+};
+
+function applySandboxCustomerHint(paymentCode) {
+  const customerInput = getEl("executeCustomerId");
+  if (!customerInput) return;
+
+  const config = SANDBOX_TEST_CUSTOMERS[String(paymentCode || "").trim()];
+  if (config) {
+    customerInput.value = config.customerId;
+    customerInput.placeholder = config.hint;
+    return;
+  }
+
+  customerInput.placeholder = "Enter customer ID";
+}
+
 async function loadExecuteBillers() {
   try {
     const dropdown = getEl("executeBillerId");
@@ -1337,14 +1357,24 @@ async function onExecuteBillerSelected() {
           : Array.isArray(rawItems?.paymentitems)
             ? rawItems.paymentitems
             : [];
+
+    const filteredItems = items.filter((item) => {
+      const code = String(item?.paymentCode || item?.code || "").trim();
+      return SANDBOX_ONLY_PAYMENT_CODES.has(code);
+    });
     
-    if (items.length === 0) {
+    if (filteredItems.length === 0) {
       paymentItemDropdown.innerHTML = '<option value="">-- No payment types available --</option>';
+      setExecuteStatus(
+        "warning",
+        "Sandbox limitation.",
+        "This biller has no demo-enabled payment code in sandbox. Use an MTN airtime option (10902)."
+      );
       return;
     }
 
     let html = '<option value="">-- Select payment type --</option>';
-    items.forEach((item) => {
+    filteredItems.forEach((item) => {
       const code = item?.paymentCode || item?.code || "";
       const name = item?.paymentitemname || item?.name || item?.itemName || "Unknown";
       const amount = item?.amount ?? "";
@@ -1373,8 +1403,11 @@ function onExecutePaymentItemSelected() {
   const selectedOption = paymentItemDropdown.options[paymentItemDropdown.selectedIndex];
   if (!selectedOption || !selectedOption.value) {
     amountInput.readOnly = false;
+    applySandboxCustomerHint("");
     return;
   }
+
+  applySandboxCustomerHint(selectedOption.value);
 
   const rawFixed = String(selectedOption.dataset.fixed || "").toLowerCase();
   const isFixed = ["true", "1", "yes"].includes(rawFixed);

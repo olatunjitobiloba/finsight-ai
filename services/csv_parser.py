@@ -118,7 +118,10 @@ def parse_csv_row(row: Dict, row_num: int) -> Optional[Union[Dict, List[Dict]]]:
         for k, v in row.items():
             if k is None:
                 continue
-            key = str(k).strip().lower().replace("-", "_").replace(" ", "_")
+            raw_key = str(k).strip()
+            # Normalize snake_case, kebab-case, space-separated, and camelCase headers.
+            key = re.sub(r'([a-z0-9])([A-Z])', r'\1_\2', raw_key)
+            key = key.lower().replace("-", "_").replace(" ", "_")
             normalized_row[key] = "" if v is None else str(v).strip()
         
         # Extract date
@@ -127,6 +130,8 @@ def parse_csv_row(row: Dict, row_num: int) -> Optional[Union[Dict, List[Dict]]]:
             'transaction_date',
             'transactiondatetime',
             'transaction_datetime',
+            'invoicedate',
+            'invoice_date',
             'order_date',
             'ship_date',
             'posted_date',
@@ -155,7 +160,9 @@ def parse_csv_row(row: Dict, row_num: int) -> Optional[Union[Dict, List[Dict]]]:
                 'note',
                 'item_type',
                 'item',
-                'product'
+                'product',
+                'stock_code',
+                'stockcode'
             ]
         )
         if not description:
@@ -163,7 +170,7 @@ def parse_csv_row(row: Dict, row_num: int) -> Optional[Union[Dict, List[Dict]]]:
             parts = [
                 get_field_value(normalized_row, ['item_type', 'item', 'product']),
                 get_field_value(normalized_row, ['country', 'region']),
-                get_field_value(normalized_row, ['order_id', 'invoice', 'reference'])
+                get_field_value(normalized_row, ['order_id', 'invoice', 'invoice_no', 'invoiceno', 'reference'])
             ]
             composed = " | ".join([p for p in parts if p])
             description = composed or "Transaction"
@@ -246,6 +253,19 @@ def get_field_value(row: Dict, field_names: List[str]) -> Optional[str]:
 
 def extract_amount(row: Dict) -> Optional[float]:
     """Extract amount from various possible column formats."""
+    # Try invoice-style amount derivation first: quantity * unit_price.
+    quantity_raw = get_field_value(row, ['quantity', 'qty'])
+    unit_price_raw = get_field_value(row, ['unit_price', 'unitprice', 'price'])
+    if quantity_raw and unit_price_raw:
+        try:
+            quantity = clean_numeric_value(quantity_raw)
+            unit_price = clean_numeric_value(unit_price_raw)
+            derived = quantity * unit_price
+            if derived != 0:
+                return derived
+        except (ValueError, InvalidOperation):
+            pass
+
     # Try direct amount column
     amount_fields = [
         'amount',
@@ -263,7 +283,10 @@ def extract_amount(row: Dict) -> Optional[float]:
         'gross_profit',
         'total_cost',
         'cost',
-        'unit_price'
+        'unit_price',
+        'unitprice',
+        'line_total',
+        'linetotal'
     ]
     for field in amount_fields:
         if field in row and row[field]:

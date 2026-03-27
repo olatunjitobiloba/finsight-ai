@@ -1,7 +1,7 @@
 """Bills Payment routes using Interswitch Marketplace VAS API."""
 
 from typing import Optional
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from services import (
@@ -370,10 +370,23 @@ async def legacy_get_payment_items(biller_id: int):
 
 
 @compat_router.post("/api/validate-customer")
-async def legacy_validate_customer(payload: list):
+async def legacy_validate_customer(request: Request):
     """Legacy route: POST /api/validate-customer with array payload."""
     try:
-        if not payload or not isinstance(payload, list):
+        body = await request.json()
+
+        if isinstance(body, dict):
+            payload = [body]
+        elif isinstance(body, list):
+            payload = body
+        else:
+            return {
+                "success": False,
+                "error": "Invalid body format",
+                "message": "Send either an object {} or array [{}]",
+            }
+
+        if not payload:
             raise ValueError("Payload must be a non-empty array")
 
         first = payload[0] if isinstance(payload[0], dict) else {}
@@ -390,17 +403,33 @@ async def legacy_validate_customer(payload: list):
 
 
 @compat_router.post("/api/pay")
-async def legacy_pay_bill(payload: LegacyPayRequest):
+async def legacy_pay_bill(request: Request):
     """Legacy route: POST /api/pay with camelCase payload."""
     try:
+        body = await request.json()
+
+        if isinstance(body, list):
+            payload = body[0] if body else {}
+        elif isinstance(body, dict):
+            payload = body
+        else:
+            return {
+                "success": False,
+                "error": "Invalid body format",
+                "message": "Send a JSON object {}",
+            }
+
+        if not payload:
+            raise ValueError("Payload cannot be empty")
+
         result = pay_vas_bill(
-            payment_code=payload.paymentCode,
-            customer_id=payload.customerId,
-            amount=payload.amount,
-            customer_mobile=payload.customerMobile or "",
-            customer_email=payload.customerEmail or "",
-            reference=payload.reference,
-            terminal_id=payload.terminalId or "3DMO0001",
+            payment_code=str(payload.get("paymentCode") or "").strip(),
+            customer_id=str(payload.get("customerId") or "").strip(),
+            amount=int(payload.get("amount")),
+            customer_mobile=str(payload.get("customerMobile") or "").strip(),
+            customer_email=str(payload.get("customerEmail") or "").strip(),
+            reference=payload.get("reference"),
+            terminal_id=str(payload.get("terminalId") or "3DMO0001").strip(),
         )
         return result.get("body", {})
     except Exception as e:

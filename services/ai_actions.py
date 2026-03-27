@@ -245,27 +245,46 @@ def generate_genuine_actions(
     if not actions:
         savings_rate = round((net / total_income * 100), 1) if total_income > 0 else 0
         target_rate  = 20
-        gap          = max(0, target_rate - savings_rate)
-        gap_amount   = round(total_income * gap / 100, 0)
+        if savings_rate >= target_rate:
+            maintain_amount = round(total_income * min(max(savings_rate / 100, 0.05), 0.3), 0)
+            actions.append({
+                "title": f"Maintain your strong savings discipline at {savings_rate}%",
+                "detail": (
+                    f"You are already above the recommended 20% savings baseline. "
+                    f"To sustain consistency, automate a monthly transfer of "
+                    f"₦{maintain_amount:,.0f} and keep surplus in a separate reserve account."
+                ),
+                "impact": "medium",
+                "type": "savings_maintain",
+                "interswitch_action": {
+                    "type": "transfer",
+                    "amount": maintain_amount,
+                    "label": f"Automate ₦{maintain_amount:,.0f} monthly reserve transfer"
+                }
+            })
+        else:
+            gap = target_rate - savings_rate
+            gap_amount = round(total_income * gap / 100, 0)
+            daily_amount = round(gap_amount / 30, 0)
 
-        actions.append({
-            "title": f"Increase your savings rate from {savings_rate}% to {target_rate}%",
-            "detail": (
-                f"You are currently saving {savings_rate}% of your income. "
-                f"The recommended minimum is 20%. "
-                f"To reach 20%, you need to save an additional "
-                f"₦{gap_amount:,.0f} per month. "
-                f"Start by transferring ₦{round(gap_amount/30, 0):,.0f}/day "
-                f"to a separate account."
-            ),
-            "impact": "medium",
-            "type":   "savings_increase",
-            "interswitch_action": {
-                "type":   "transfer",
-                "amount": gap_amount,
-                "label":  f"Transfer ₦{gap_amount:,.0f} to savings"
-            }
-        })
+            actions.append({
+                "title": f"Increase your savings rate from {savings_rate}% to {target_rate}%",
+                "detail": (
+                    f"You are currently saving {savings_rate}% of your income. "
+                    f"The recommended minimum is 20%. "
+                    f"To reach 20%, you need to save an additional "
+                    f"₦{gap_amount:,.0f} per month. "
+                    f"Start by transferring ₦{daily_amount:,.0f}/day "
+                    f"to a separate account."
+                ),
+                "impact": "medium",
+                "type": "savings_increase",
+                "interswitch_action": {
+                    "type": "transfer",
+                    "amount": gap_amount,
+                    "label": f"Transfer ₦{gap_amount:,.0f} to savings"
+                }
+            })
 
     # Sort by impact
     order = {"high": 0, "medium": 1, "low": 2}

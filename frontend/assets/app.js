@@ -749,7 +749,56 @@ function findSavingsMatch(transactions) {
   return null;
 }
 
+function isBusinessDatasetForUI(transactions) {
+  if (!Array.isArray(transactions) || transactions.length === 0) return false;
+
+  let taggedRows = 0;
+  let operationsRows = 0;
+  let creditRows = 0;
+  let csvRows = 0;
+  let incomeLikeRows = 0;
+  let numericDescRows = 0;
+
+  for (const txn of transactions) {
+    const desc = String(txn.description || "").toLowerCase();
+    const cat = String(txn.category || "").toLowerCase();
+    const type = String(txn.type || "").toLowerCase();
+    const source = String(txn.source || "").toLowerCase();
+
+    if (desc.includes("(revenue)") || desc.includes("(cost)") || desc.includes("(estimated cost)")) {
+      taggedRows += 1;
+    }
+    if (cat === "operations") {
+      operationsRows += 1;
+    }
+    if (type === "credit") {
+      creditRows += 1;
+    }
+    if (source === "csv") {
+      csvRows += 1;
+    }
+    if (cat === "income" || cat === "sales") {
+      incomeLikeRows += 1;
+    }
+    if (/^\d{5,}$/.test(String(txn.description || "").trim())) {
+      numericDescRows += 1;
+    }
+  }
+
+  const n = transactions.length;
+  const taggedRatio = (taggedRows + operationsRows) / n;
+  if (taggedRatio >= 0.4) return true;
+
+  const mostlyCredit = creditRows / n >= 0.9;
+  const mostlyCsv = csvRows / n >= 0.9;
+  const mostlyIncomeLike = incomeLikeRows / n >= 0.7;
+  const numericInvoiceLike = numericDescRows / n >= 0.35;
+  const highVolume = n >= 500;
+  return highVolume && mostlyCredit && mostlyCsv && (mostlyIncomeLike || numericInvoiceLike);
+}
+
 function buildPillarWhyLines(_pillars, transactions) {
+  const businessMode = isBusinessDatasetForUI(transactions);
   const credits = transactions.filter((t) => t.type === "credit");
   const debits = transactions.filter((t) => t.type === "debit");
   const incomeCount = credits.length;
@@ -794,6 +843,58 @@ function buildPillarWhyLines(_pillars, transactions) {
     } else {
       spendingWhy = `Branch: ratio > 175% (${ratioText}), so 0/25.`;
     }
+  }
+
+  if (businessMode) {
+    const reserveRatio = totalIncome > 0 ? Math.max(0, (totalIncome - totalSpending) / totalIncome) : 0;
+    const reserveText = `${(reserveRatio * 100).toFixed(1)}%`;
+    let savingsWhy = `Branch: reserve ratio < 8% (${reserveText}), so 4/20.`;
+    if (reserveRatio >= 0.35) {
+      savingsWhy = `Branch: reserve ratio >= 35% (${reserveText}), so 20/20.`;
+    } else if (reserveRatio >= 0.25) {
+      savingsWhy = `Branch: reserve ratio >= 25% (${reserveText}), so 16/20.`;
+    } else if (reserveRatio >= 0.15) {
+      savingsWhy = `Branch: reserve ratio >= 15% (${reserveText}), so 12/20.`;
+    } else if (reserveRatio >= 0.08) {
+      savingsWhy = `Branch: reserve ratio >= 8% (${reserveText}), so 8/20.`;
+    }
+
+    const marginRatio = totalIncome > 0 ? (totalIncome - totalSpending) / totalIncome : 0;
+    const marginText = `${(marginRatio * 100).toFixed(1)}%`;
+    let billWhy = `Branch: margin < 8% (${marginText}), so 3/15.`;
+    if (marginRatio >= 0.35) {
+      billWhy = `Branch: margin >= 35% (${marginText}), so 15/15.`;
+    } else if (marginRatio >= 0.25) {
+      billWhy = `Branch: margin >= 25% (${marginText}), so 12/15.`;
+    } else if (marginRatio >= 0.15) {
+      billWhy = `Branch: margin >= 15% (${marginText}), so 9/15.`;
+    } else if (marginRatio >= 0.08) {
+      billWhy = `Branch: margin >= 8% (${marginText}), so 6/15.`;
+    }
+
+    const categoryCount = new Set(
+      transactions
+        .map((t) => String(t.category || "").trim())
+        .filter(Boolean)
+    ).size;
+    let diversityWhy = `Branch: categories < 2 (${categoryCount}), so 3/15.`;
+    if (categoryCount >= 6) {
+      diversityWhy = `Branch: categories >= 6 (${categoryCount}), so 15/15.`;
+    } else if (categoryCount >= 4) {
+      diversityWhy = `Branch: categories >= 4 (${categoryCount}), so 12/15.`;
+    } else if (categoryCount >= 3) {
+      diversityWhy = `Branch: categories >= 3 (${categoryCount}), so 9/15.`;
+    } else if (categoryCount >= 2) {
+      diversityWhy = `Branch: categories >= 2 (${categoryCount}), so 6/15.`;
+    }
+
+    return {
+      income_stability: incomeWhy,
+      spending_control: spendingWhy,
+      savings_behavior: savingsWhy,
+      bill_regularity: billWhy,
+      category_diversity: diversityWhy
+    };
   }
 
   const savingsMatch = findSavingsMatch(transactions);
@@ -847,6 +948,7 @@ function buildPillarWhyLines(_pillars, transactions) {
 }
 
 function buildPillarExplanations(pillars, transactions, pillarWhyLines = {}) {
+  const businessMode = isBusinessDatasetForUI(transactions);
   const credits = transactions.filter((t) => t.type === "credit");
   const debits = transactions.filter((t) => t.type === "debit");
   const savingsTxns = transactions.filter(isSavingsTxn);
@@ -867,7 +969,45 @@ function buildPillarExplanations(pillars, transactions, pillarWhyLines = {}) {
       .map(([category]) => category)
   );
 
-  const diversityTxns = debits.filter((txn) => qualifyingCategories.has(txn.category || "Uncategorized"));
+  const diversityTxns = businessMode
+    ? transactions.filter((txn) => Boolean(String(txn.category || "").trim()))
+    : debits.filter((txn) => qualifyingCategories.has(txn.category || "Uncategorized"));
+
+  const savingsSection = businessMode
+    ? {
+        title: `Reserve basis transactions (${credits.length + debits.length})`,
+        txns: [...credits, ...debits],
+        emptyText: "No inflow/outflow transactions were found."
+      }
+    : {
+        title: `Savings-related transactions (${savingsTxns.length})`,
+        txns: savingsTxns,
+        emptyText: "No savings-related transactions matched."
+      };
+
+  const billSection = businessMode
+    ? {
+        title: `Margin basis transactions (${credits.length + debits.length})`,
+        txns: [...credits, ...debits],
+        emptyText: "No transactions were available to compute margin."
+      }
+    : {
+        title: `Bill transactions counted (${billTxns.length})`,
+        txns: billTxns,
+        emptyText: "No qualifying bill transactions were found."
+      };
+
+  const diversitySection = businessMode
+    ? {
+        title: `Transactions with categories (${diversityTxns.length})`,
+        txns: diversityTxns,
+        emptyText: "No categorized transactions were found."
+      }
+    : {
+        title: `Transactions in qualifying categories (${diversityTxns.length})`,
+        txns: diversityTxns,
+        emptyText: "No categories met the 3% contribution threshold."
+      };
 
   const spendingRatio = totalIncome > 0 ? (totalSpending / totalIncome) : null;
   const ratioText = spendingRatio === null
@@ -911,39 +1051,21 @@ function buildPillarExplanations(pillars, transactions, pillarWhyLines = {}) {
       score: Number(pillars.savings_behavior || 0),
       max: PILLAR_MAXES.savings_behavior,
       reason: pillarWhyLines.savings_behavior || "Threshold branch unavailable.",
-      sections: [
-        {
-          title: `Savings-related transactions (${savingsTxns.length})`,
-          txns: savingsTxns,
-          emptyText: "No savings-related transactions matched."
-        }
-      ]
+      sections: [savingsSection]
     },
     bill_regularity: {
       title: PILLAR_LABELS.bill_regularity,
       score: Number(pillars.bill_regularity || 0),
       max: PILLAR_MAXES.bill_regularity,
       reason: pillarWhyLines.bill_regularity || "Threshold branch unavailable.",
-      sections: [
-        {
-          title: `Bill transactions counted (${billTxns.length})`,
-          txns: billTxns,
-          emptyText: "No qualifying bill transactions were found."
-        }
-      ]
+      sections: [billSection]
     },
     category_diversity: {
       title: PILLAR_LABELS.category_diversity,
       score: Number(pillars.category_diversity || 0),
       max: PILLAR_MAXES.category_diversity,
       reason: pillarWhyLines.category_diversity || "Threshold branch unavailable.",
-      sections: [
-        {
-          title: `Transactions in qualifying categories (${diversityTxns.length})`,
-          txns: diversityTxns,
-          emptyText: "No categories met the 3% contribution threshold."
-        }
-      ]
+      sections: [diversitySection]
     }
   };
 }

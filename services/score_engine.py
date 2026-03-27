@@ -369,7 +369,21 @@ def days_to_zero(
     if active_spend_days == 0:
         return _empty_days()
 
-    base_burn = total_spending / active_spend_days
+    spend_dates = []
+    for key in daily_spend.keys():
+        try:
+            spend_dates.append(datetime.strptime(str(key), "%Y-%m-%d").date())
+        except ValueError:
+            continue
+
+    # Statement exports can collapse many rows onto few dates.
+    # Use a minimum observation window to avoid unrealistically high burn rates.
+    calendar_span_days = 0
+    if spend_dates:
+        calendar_span_days = (max(spend_dates) - min(spend_dates)).days + 1
+
+    observation_days = max(active_spend_days, calendar_span_days, 7)
+    base_burn = total_spending / observation_days
 
     # Add a small volatility buffer when spending is highly concentrated.
     max_day_spend = max(daily_spend.values())
@@ -454,11 +468,21 @@ def detect_patterns(transactions: list) -> dict:
         return {"patterns": [], "top_pattern": None}
 
     debits = [t for t in transactions if t.get("type") == "debit"]
-
-    if not debits:
-        return {"patterns": [], "top_pattern": None}
+    credits = [t for t in transactions if t.get("type") == "credit"]
 
     patterns = []
+
+    # ── Pattern 0: Cost pressure (works for sales/business statement style data)
+    p0 = _detect_cost_pressure(credits, debits)
+    if p0:
+        patterns.append(p0)
+
+    if not debits:
+        return {
+            "patterns": patterns,
+            "top_pattern": patterns[0] if patterns else None,
+            "count": len(patterns)
+        }
 
     # ── Pattern 1: Weekend Overspending
     p1 = _detect_weekend_spending(debits)
@@ -494,6 +518,7 @@ def detect_patterns(transactions: list) -> dict:
         "food_overspend": 2,
         "late_month_desperation": 3,
         "recurring_merchant": 4,
+        "cost_pressure": 2,
     }
     patterns.sort(
         key=lambda x: (
@@ -506,6 +531,37 @@ def detect_patterns(transactions: list) -> dict:
         "patterns":    patterns,
         "top_pattern": patterns[0] if patterns else None,
         "count":       len(patterns)
+    }
+
+
+def _detect_cost_pressure(credits: list, debits: list) -> Optional[dict]:
+    """Detects when outflow/cost is consuming most of inflow/revenue."""
+    if not credits or not debits:
+        return None
+
+    total_income = sum(t.get("amount", 0) for t in credits)
+    total_spending = sum(t.get("amount", 0) for t in debits)
+
+    if total_income <= 0:
+        return None
+
+    ratio = total_spending / total_income
+    if ratio < 0.55:
+        return None
+
+    pct = round(ratio * 100)
+    margin = round(((total_income - total_spending) / total_income) * 100)
+    severity = "high" if ratio >= 0.85 else ("medium" if ratio >= 0.7 else "low")
+
+    return {
+        "id": "cost_pressure",
+        "title": "Cost Pressure Detected",
+        "detail": (
+            f"Your outflow is {pct}% of inflow in this period, "
+            f"leaving an estimated margin of {margin}%. "
+            f"Reducing cost intensity improves stability and runway."
+        ),
+        "severity": severity
     }
 
 

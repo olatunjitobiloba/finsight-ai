@@ -53,9 +53,11 @@ def parse_csv(csv_content: Union[str, bytes]) -> Dict:
                 if not row or not any(str(v).strip() for v in row.values() if v is not None):
                     continue
 
-                transaction = parse_csv_row(row, row_num)
-                if transaction:
-                    transactions.append(transaction)
+                parsed_result = parse_csv_row(row, row_num)
+                if isinstance(parsed_result, list):
+                    transactions.extend(parsed_result)
+                elif parsed_result:
+                    transactions.append(parsed_result)
                 else:
                     failed_rows.append(f"Row {row_num}: Invalid data format")
             except Exception as e:
@@ -99,7 +101,7 @@ def detect_delimiter(sample: str) -> str:
     return max(delimiter_counts, key=delimiter_counts.get)
 
 
-def parse_csv_row(row: Dict, row_num: int) -> Optional[Dict]:
+def parse_csv_row(row: Dict, row_num: int) -> Optional[Union[Dict, List[Dict]]]:
     """
     Parse a single CSV row into transaction format.
     
@@ -139,14 +141,6 @@ def parse_csv_row(row: Dict, row_num: int) -> Optional[Dict]:
         if not parsed_date:
             return None
         
-        # Extract amount
-        amount = extract_amount(normalized_row)
-        if amount is None:
-            return None
-        
-        # Extract transaction type
-        transaction_type = determine_transaction_type(normalized_row, amount)
-        
         # Extract description
         description = get_field_value(
             normalized_row,
@@ -173,6 +167,53 @@ def parse_csv_row(row: Dict, row_num: int) -> Optional[Dict]:
             ]
             composed = " | ".join([p for p in parts if p])
             description = composed or "Transaction"
+
+        # Sales/business CSV shape: emit revenue + cost transactions per row
+        # so downstream cashflow/pattern engines receive both inflow and outflow signals.
+        revenue = extract_sales_value(normalized_row, [
+            'total_revenue', 'revenue', 'net_revenue', 'sales', 'gross_sales'
+        ])
+        cost = extract_sales_value(normalized_row, [
+            'total_cost', 'cost', 'unit_cost', 'expense', 'expenses'
+        ])
+        if revenue is not None or cost is not None:
+            sales_transactions = []
+            sales_category = get_field_value(normalized_row, ['item_type', 'category', 'type']) or 'Sales'
+
+            if revenue is not None and revenue > 0:
+                sales_transactions.append({
+                    "amount": abs(float(revenue)),
+                    "type": "credit",
+                    "category": sales_category,
+                    "description": f"{description} (Revenue)",
+                    "transaction_date": parsed_date,
+                    "source": "csv",
+                    "bank": "CSV Import",
+                    "balance": 0.0
+                })
+
+            if cost is not None and cost > 0:
+                sales_transactions.append({
+                    "amount": abs(float(cost)),
+                    "type": "debit",
+                    "category": "Operations",
+                    "description": f"{description} (Cost)",
+                    "transaction_date": parsed_date,
+                    "source": "csv",
+                    "bank": "CSV Import",
+                    "balance": 0.0
+                })
+
+            if sales_transactions:
+                return sales_transactions
+
+        # Extract amount
+        amount = extract_amount(normalized_row)
+        if amount is None:
+            return None
+
+        # Extract transaction type
+        transaction_type = determine_transaction_type(normalized_row, amount)
         
         # Extract or assign category
         category = get_field_value(normalized_row, ['category', 'type'])
@@ -249,6 +290,19 @@ def extract_amount(row: Dict) -> Optional[float]:
         except (ValueError, InvalidOperation):
             pass
     
+    return None
+
+
+def extract_sales_value(row: Dict, fields: List[str]) -> Optional[float]:
+    """Extract numeric value from the first available sales metric field."""
+    for field in fields:
+        raw = row.get(field)
+        if raw in (None, ""):
+            continue
+        try:
+            return clean_numeric_value(str(raw))
+        except (ValueError, InvalidOperation):
+            continue
     return None
 
 

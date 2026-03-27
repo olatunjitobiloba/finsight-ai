@@ -1476,6 +1476,114 @@ function onExecutePaymentItemSelected() {
   amountInput.readOnly = false;
 }
 
+function buildExecuteReference() {
+  const suffix = Date.now();
+  return `FINSIGHT-${suffix}`;
+}
+
+function parseExecutePayOutcome(payload) {
+  const data = payload?.data || {};
+  const responseCode = String(
+    payload?.response_code
+    || data?.ResponseCode
+    || data?.responseCode
+    || payload?.code
+    || ""
+  ).toUpperCase().trim();
+
+  const grouping = String(
+    payload?.response_description
+    || data?.ResponseCodeGrouping
+    || data?.responseDescription
+    || payload?.status
+    || ""
+  ).toUpperCase().trim();
+
+  const reference = String(
+    payload?.reference
+    || data?.RequestReference
+    || data?.requestReference
+    || data?.transactionRef
+    || ""
+  ).trim();
+
+  const successful = responseCode === "90000" || grouping.includes("SUCCESS");
+  const pending = ["90009", "90089", "09"].includes(responseCode)
+    || grouping.includes("PENDING")
+    || grouping.includes("PROCESS");
+
+  return { responseCode, grouping, reference, successful, pending };
+}
+
+function parseExecuteTransactionOutcome(payload) {
+  const data = payload?.data || {};
+  const responseCode = String(
+    data?.ResponseCode
+    || payload?.response_code
+    || payload?.ResponseCode
+    || ""
+  ).toUpperCase().trim();
+
+  const statusText = String(
+    data?.ResponseCodeGrouping
+    || data?.Status
+    || payload?.transaction_status
+    || payload?.status
+    || ""
+  ).toUpperCase().trim();
+
+  const successful = responseCode === "90000" || statusText.includes("SUCCESS");
+  const pending = ["90009", "90089", "09"].includes(responseCode)
+    || statusText.includes("PENDING")
+    || statusText.includes("PROCESS");
+
+  return { responseCode, statusText, successful, pending, raw: payload };
+}
+
+async function fetchExecuteTransaction(reference) {
+  const endpoints = [
+    `${API_BASE}/api/transactions?request-reference=${encodeURIComponent(reference)}`,
+    `${API_BASE}/api/bills/transaction?reference=${encodeURIComponent(reference)}`,
+  ];
+
+  let lastPayload = {};
+  let lastStatus = 0;
+
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetch(endpoint);
+      const payload = await response.json();
+      lastPayload = payload;
+      lastStatus = response.status;
+      if (response.ok) {
+        return { ok: true, payload };
+      }
+    } catch (err) {
+      lastPayload = { message: String(err?.message || "Transaction lookup failed") };
+    }
+  }
+
+  return { ok: false, payload: lastPayload, status: lastStatus };
+}
+
+async function pollExecuteTransaction(reference, attempts = 4, delayMs = 2500) {
+  for (let index = 0; index < attempts; index += 1) {
+    if (index > 0) {
+      await sleep(delayMs);
+    }
+    const result = await fetchExecuteTransaction(reference);
+    if (!result.ok) {
+      continue;
+    }
+    const parsed = parseExecuteTransactionOutcome(result.payload);
+    if (parsed.successful || !parsed.pending) {
+      return parsed;
+    }
+  }
+
+  return null;
+}
+
 async function confirmExecutePayment() {
   const customerId = String(getEl("executeCustomerId")?.value || "").trim();
   const amountRaw = String(getEl("executeAmount")?.value || "").trim();
@@ -1524,6 +1632,8 @@ async function confirmExecutePayment() {
     setExecuteStatus("loading", "Processing payment...", "Step 2 of 2: Initiate payment");
     await sleep(500);
 
+    const clientReference = buildExecuteReference();
+
     const payRes = await fetch(`${API_BASE}/api/bills/pay`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1531,6 +1641,7 @@ async function confirmExecutePayment() {
         customerId: customerId,
         paymentCode: paymentCode,
         amount: amountKobo,
+        reference: clientReference,
         customerMobile: "",
         customerEmail: ""
       })
@@ -1545,20 +1656,52 @@ async function confirmExecutePayment() {
       return;
     }
 
-    const reference = payData?.reference || "N/A";
-    const responseCode = payData?.response_code || "Unknown";
+    const parsedPay = parseExecutePayOutcome(payData);
+    const reference = parsedPay.reference || clientReference;
+    const responseCode = parsedPay.responseCode || "UNKNOWN";
 
-    if (responseCode === "90009") {
+    if (parsedPay.pending) {
       setExecuteStatus(
         "pending",
         "Payment initiated successfully.",
         `Reference: ${reference} | Amount: ₦${amountNGN.toLocaleString("en-NG")} | Status: Processing`
       );
       showToast(`Payment initiated. Reference: ${reference}`);
+
+      const tx = await pollExecuteTransaction(reference, 4, 2500);
+      if (tx?.successful) {
+        setExecuteStatus(
+          "success",
+          "Payment completed successfully.",
+          `Reference: ${reference} | Amount: ₦${amountNGN.toLocaleString("en-NG")} | Status: ${tx.statusText || "SUCCESSFUL"}`
+        );
+        showToast("Payment completed successfully.");
+        return;
+      }
+
+      if (tx?.pending) {
+        setExecuteStatus(
+          "pending",
+          "Payment still processing.",
+          `Reference: ${reference} | Check again shortly from transaction status.`
+        );
+        return;
+      }
+
+      if (tx && !tx.successful) {
+        setExecuteStatus(
+          "warning",
+          "Payment status unclear.",
+          `Response: ${tx.responseCode || tx.statusText || "UNKNOWN"} | Reference: ${reference}`
+        );
+        showToast(`Payment processed with status: ${tx.responseCode || tx.statusText || "UNKNOWN"}`, "warning");
+        return;
+      }
+
       return;
     }
 
-    if (responseCode === "90000") {
+    if (parsedPay.successful) {
       setExecuteStatus(
         "success",
         "Payment completed successfully.",

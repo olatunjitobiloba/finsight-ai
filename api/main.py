@@ -7,7 +7,7 @@ from api.routes.health import router as health_router
 from api.routes.parse import router as parse_router
 from api.routes.execute import router as execute_router
 from api.routes.bank_verify import router as bank_verify_router
-from api.routes.bills import router as bills_router
+from api.routes.bills import router as bills_router, compat_router as bills_compat_router
 from api.routes.otp import router as otp_router
 from api.routes.auth import router as auth_router
 
@@ -32,6 +32,7 @@ app.include_router(parse_router)
 app.include_router(execute_router)
 app.include_router(bank_verify_router)
 app.include_router(bills_router)
+app.include_router(bills_compat_router)
 app.include_router(otp_router)
 app.include_router(auth_router)
 

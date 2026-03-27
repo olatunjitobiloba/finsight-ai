@@ -13,6 +13,7 @@ from services import (
 )
 
 router = APIRouter(prefix="/api/bills", tags=["bills"])
+compat_router = APIRouter(tags=["bills-compat"])
 
 
 # Request Models
@@ -41,6 +42,17 @@ class PayBillRequest(BaseModel):
 class TransactionStatusRequest(BaseModel):
     """Check transaction status."""
     reference: str = Field(..., min_length=1, description="Transaction reference from pay response")
+
+
+class LegacyPayRequest(BaseModel):
+    """Legacy pay payload shape accepted by /api/pay."""
+    customerId: str = Field(..., min_length=1)
+    paymentCode: str = Field(..., min_length=1)
+    amount: int = Field(..., gt=0)
+    customerMobile: Optional[str] = None
+    customerEmail: Optional[str] = None
+    reference: Optional[str] = None
+    terminalId: Optional[str] = "3DMO0001"
 
 
 def parse_payment_response(response: dict) -> dict:
@@ -325,3 +337,81 @@ async def get_transaction_status(reference: str):
             status_code=500,
             detail=f"Transaction status check failed: {str(e)}"
         )
+
+
+@router.get("/health")
+async def bills_health_check():
+    """Integration health endpoint for bills service."""
+    try:
+        _ = get_vas_billers()
+        return {"status": "ready", "message": "Bills integration is healthy"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@compat_router.get("/api/billers")
+async def legacy_get_billers():
+    """Legacy route: GET /api/billers."""
+    try:
+        result = get_vas_billers()
+        return result.get("body", {})
+    except Exception as e:
+        return {"success": False, "error": str(e), "message": "Failed to fetch billers"}
+
+
+@compat_router.get("/api/billers/payment-items")
+async def legacy_get_payment_items(biller_id: int):
+    """Legacy route: GET /api/billers/payment-items?biller_id=..."""
+    try:
+        result = get_vas_payment_items(biller_id)
+        return result.get("body", {})
+    except Exception as e:
+        return {"success": False, "error": str(e), "message": "Failed to fetch payment items"}
+
+
+@compat_router.post("/api/validate-customer")
+async def legacy_validate_customer(payload: list):
+    """Legacy route: POST /api/validate-customer with array payload."""
+    try:
+        if not payload or not isinstance(payload, list):
+            raise ValueError("Payload must be a non-empty array")
+
+        first = payload[0] if isinstance(payload[0], dict) else {}
+        customer_id = str(first.get("customerId") or "").strip()
+        payment_code = str(first.get("paymentCode") or "").strip()
+
+        if not customer_id or not payment_code:
+            raise ValueError("customerId and paymentCode are required")
+
+        result = validate_vas_customer(customer_id, payment_code)
+        return result.get("body", {})
+    except Exception as e:
+        return {"success": False, "error": str(e), "message": "Customer validation failed"}
+
+
+@compat_router.post("/api/pay")
+async def legacy_pay_bill(payload: LegacyPayRequest):
+    """Legacy route: POST /api/pay with camelCase payload."""
+    try:
+        result = pay_vas_bill(
+            payment_code=payload.paymentCode,
+            customer_id=payload.customerId,
+            amount=payload.amount,
+            customer_mobile=payload.customerMobile or "",
+            customer_email=payload.customerEmail or "",
+            reference=payload.reference,
+            terminal_id=payload.terminalId or "3DMO0001",
+        )
+        return result.get("body", {})
+    except Exception as e:
+        return {"success": False, "error": str(e), "message": "Payment execution failed"}
+
+
+@compat_router.get("/api/transactions")
+async def legacy_get_transaction(request_reference: str):
+    """Legacy route: GET /api/transactions?request_reference=..."""
+    try:
+        result = get_vas_transaction_status(request_reference)
+        return result.get("body", {})
+    except Exception as e:
+        return {"success": False, "error": str(e), "message": "Failed to fetch transaction"}

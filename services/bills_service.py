@@ -13,15 +13,24 @@ ISW_BASE_VAS = "https://api-marketplace-routing.k8.isw.la/marketplace-routing/ap
 
 def _get_token() -> str:
 	"""Fetch OAuth2 bearer token for Marketplace APIs."""
-	cid = (os.getenv("INTERSWITCH_CLIENT_ID") or "").strip()
+	cid = (
+		os.getenv("INTERSWITCH_CLIENT_ID")
+		or os.getenv("ISW_CLIENT_ID")
+		or os.getenv("MARKETPLACE_CLIENT_ID")
+		or ""
+	).strip()
 	sec = (
 		os.getenv("INTERSWITCH_CLIENT_SECRET")
+		or os.getenv("ISW_CLIENT_SECRET")
+		or os.getenv("MARKETPLACE_SECRET_KEY")
 		or os.getenv("INTERSWITCH_SECRET_KEY")
 		or ""
 	).strip()
 
 	if not cid or not sec:
-		raise ValueError("Missing INTERSWITCH_CLIENT_ID or INTERSWITCH_CLIENT_SECRET/INTERSWITCH_SECRET_KEY")
+		raise ValueError(
+			"Missing bills credentials. Set one of INTERSWITCH_CLIENT_ID/ISW_CLIENT_ID/MARKETPLACE_CLIENT_ID and INTERSWITCH_CLIENT_SECRET/ISW_CLIENT_SECRET/MARKETPLACE_SECRET_KEY/INTERSWITCH_SECRET_KEY"
+		)
 
 	cred = base64.b64encode(f"{cid}:{sec}".encode()).decode()
 	response = httpx.post(

@@ -19,7 +19,10 @@ VERIFY_BASE_URL = os.getenv(
     "INTERSWITCH_VERIFY_BASE_URL",
     "https://api-marketplace-routing.k8.isw.la/marketplace-routing/api/v1",
 )
-MARKETPLACE_BASE_URL = os.getenv("INTERSWITCH_MARKETPLACE_BASE_URL", VERIFY_BASE_URL)
+MARKETPLACE_BASE_URL = os.getenv(
+    "INTERSWITCH_MARKETPLACE_BASE_URL",
+    "https://api-marketplace-routing.k8.isw.la/marketplace-routing/api/v1",
+)
 BASE_URL = os.getenv("INTERSWITCH_BASE_URL", VERIFY_BASE_URL)
 TERMINAL_ID = os.getenv("INTERSWITCH_TERMINAL_ID", "3DMO0001")
 
@@ -652,7 +655,7 @@ def get_bank_list() -> dict:
         normalized = [_normalize_bank(bank) for bank in banks]
         normalized = [bank for bank in normalized if bank]
         if normalized:
-            return {"status": "success", "banks": normalized, "resolved_url": url, "source": "interswitch"}
+            return {"status": "success", "banks": normalized, "resolved_url": url, "source": "live"}
 
         logging.warning("[get_bank_list] No usable banks in provider response, using fallback list")
         return {
@@ -692,7 +695,7 @@ def get_bank_list() -> dict:
 def verify_bank_account(account_number: str, bank_code: str) -> dict:
     """Resolve account name via Marketplace verify identity endpoint."""
     try:
-        url = f"{VERIFY_BASE_URL}/verify/identity/account-number/resolve"
+        url = f"{MARKETPLACE_BASE_URL}/verify/identity/account-number/resolve"
         payload = {
             "accountNumber": account_number,
             "bankCode": bank_code,

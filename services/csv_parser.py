@@ -73,6 +73,14 @@ def parse_csv(csv_content: Union[str, bytes]) -> Dict:
         success_count = len(transactions)
         fail_count = len(failed_rows)
         
+        # If we processed rows but got no transactions, likely due to missing amount columns
+        if total_rows > 0 and success_count == 0 and fail_count == 0:
+            failed_rows.append(
+                "CSV has no monetary data: Missing amount/revenue/cost/price/debit/credit columns. "
+                "Please provide a CSV with transaction amounts."
+            )
+            fail_count = 1
+        
         return {
             "parsed": transactions,
             "failed": failed_rows,
@@ -358,7 +366,19 @@ def extract_amount(row: Dict) -> Optional[float]:
         'unit_price',
         'unitprice',
         'line_total',
-        'linetotal'
+        'linetotal',
+        'salary',
+        'wage',
+        'wages',
+        'payroll',
+        'compensation',
+        'pay',
+        'payment',
+        'gross_salary',
+        'net_salary',
+        'hourly_rate',
+        'rate',
+        'commission'
     ]
     for field in amount_fields:
         if field in row and row[field]:

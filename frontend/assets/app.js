@@ -1320,26 +1320,23 @@ async function onExecuteBillerSelected() {
     paymentItemDropdown.innerHTML = '<option value="">Loading payment types...</option>';
     paymentItemDropdown.disabled = true;
 
-    const paymentItemRequests = [
-      () => fetch(`${API_BASE}/api/bills/items`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ biller_id: Number(billerId) })
-      }),
-      () => fetch(`${API_BASE}/api/execute/payment-items?biller_id=${encodeURIComponent(billerId)}`),
-    ];
+    const response = await fetch(`${API_BASE}/api/bills/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ biller_id: Number(billerId) })
+    });
+    const data = await response.json();
 
-    let items = [];
-
-    for (const request of paymentItemRequests) {
-      const response = await request();
-      const data = await response.json();
-
-      if (response.ok && data?.status !== "error" && Array.isArray(data?.data)) {
-        items = data.data;
-        break;
-      }
-    }
+    const rawItems = data?.data;
+    const items = Array.isArray(rawItems)
+      ? rawItems
+      : Array.isArray(rawItems?.items)
+        ? rawItems.items
+        : Array.isArray(rawItems?.paymentItems)
+          ? rawItems.paymentItems
+          : Array.isArray(rawItems?.paymentitems)
+            ? rawItems.paymentitems
+            : [];
     
     if (items.length === 0) {
       paymentItemDropdown.innerHTML = '<option value="">-- No payment types available --</option>';

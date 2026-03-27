@@ -214,6 +214,21 @@ def parse_csv_row(row: Dict, row_num: int) -> Optional[Union[Dict, List[Dict]]]:
                     "balance": 0.0
                 })
 
+            # If dataset has only revenue fields, infer an operational cost baseline
+            # so runway and behavioral models don't become credit-only/N-A.
+            if revenue is not None and revenue > 0 and (cost is None or cost <= 0):
+                estimated_cost = abs(float(revenue)) * INVOICE_ESTIMATED_COST_RATIO
+                sales_transactions.append({
+                    "amount": abs(float(estimated_cost)),
+                    "type": "debit",
+                    "category": "Operations",
+                    "description": f"{description} (Estimated Cost)",
+                    "transaction_date": parsed_date,
+                    "source": "csv",
+                    "bank": "CSV Import",
+                    "balance": 0.0
+                })
+
             if sales_transactions:
                 return sales_transactions
 

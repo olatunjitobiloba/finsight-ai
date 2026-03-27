@@ -326,9 +326,18 @@ def parse_csv_row(row: Dict, row_num: int) -> Optional[Union[Dict, List[Dict]]]:
         # Extract or assign category
         category = get_field_value(normalized_row, ['category', 'type'])
         if not category:
-            # Use 'Payroll' for salary/compensation data
+            # For payroll rows, categorize by salary level to create spending diversity
+            # This helps pattern detection and category scoring identify spending variance
             if is_payroll_row:
-                category = 'Payroll'
+                salary_amount = extract_amount(normalized_row)
+                if salary_amount and abs(salary_amount) >= 12000:
+                    category = 'Executive Payroll'
+                elif salary_amount and abs(salary_amount) >= 8000:
+                    category = 'Senior Staff Payroll'
+                elif salary_amount and abs(salary_amount) >= 5000:
+                    category = 'Staff Payroll'
+                else:
+                    category = 'Junior Staff Payroll'
             else:
                 category = categorize_transaction(description, transaction_type)
         

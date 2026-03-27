@@ -16,6 +16,9 @@ import re
 from services.ai_actions import generate_genuine_actions
 
 
+INFERRED_BUSINESS_COST_RATIO = 0.62
+
+
 # ─────────────────────────────────────────────────────
 # SECTION 1 — FINANCIAL HEALTH SCORE
 # ─────────────────────────────────────────────────────
@@ -406,7 +409,79 @@ def days_to_zero(
     credits = [t for t in transactions if t.get("type") == "credit"]
 
     if not debits:
-        return _empty_days()
+        if not business_mode or not credits:
+            return _empty_days()
+
+        # Credit-only business exports can appear when statement has no explicit cost/debit columns.
+        # Infer operational outflow so runway remains meaningful.
+        inferred_daily_spend = defaultdict(float)
+        for t in credits:
+            try:
+                tx_date = str(t["transaction_date"])
+                inferred_daily_spend[tx_date] += float(t.get("amount", 0)) * INFERRED_BUSINESS_COST_RATIO
+            except Exception:
+                continue
+
+        if not inferred_daily_spend:
+            return _empty_days()
+
+        total_income = sum(float(t.get("amount", 0) or 0) for t in credits)
+        total_spending = sum(inferred_daily_spend.values())
+
+        spend_dates = []
+        for key in inferred_daily_spend.keys():
+            try:
+                spend_dates.append(datetime.strptime(str(key), "%Y-%m-%d").date())
+            except ValueError:
+                continue
+
+        calendar_span_days = 0
+        if spend_dates:
+            calendar_span_days = (max(spend_dates) - min(spend_dates)).days + 1
+
+        active_spend_days = len(inferred_daily_spend)
+        observation_days = max(active_spend_days, calendar_span_days, 30)
+        daily_burn = (total_spending / observation_days) if observation_days > 0 else 0
+
+        if daily_burn <= 0:
+            return _empty_days()
+
+        margin_ratio = ((total_income - total_spending) / total_income) if total_income > 0 else 0.0
+        target_days = _business_target_runway_days(margin_ratio)
+        min_plausible = daily_burn * 5
+        max_plausible = daily_burn * 120
+        if (
+            current_balance is None
+            or current_balance <= 0
+            or current_balance < min_plausible
+            or current_balance > max_plausible
+        ):
+            current_balance = daily_burn * target_days
+
+        days_remaining = int(current_balance / daily_burn)
+        days_remaining = max(0, days_remaining)
+        prediction_date = (date.today() + timedelta(days=days_remaining)).strftime("%B %d, %Y")
+
+        if days_remaining <= 3:
+            urgency = "critical"
+        elif days_remaining <= 7:
+            urgency = "high"
+        elif days_remaining <= 14:
+            urgency = "medium"
+        else:
+            urgency = "low"
+
+        return {
+            "days_remaining": days_remaining,
+            "daily_burn_rate": round(daily_burn, 2),
+            "current_balance": round(current_balance, 2),
+            "prediction_date": prediction_date,
+            "urgency": urgency,
+            "message": (
+                f"Runway estimated from inferred operating costs: "
+                f"about {days_remaining} days remaining ({prediction_date})."
+            ),
+        }
 
     total_spending = sum(t["amount"] for t in debits)
     total_income   = sum(t["amount"] for t in credits)
@@ -550,6 +625,10 @@ def detect_patterns(transactions: list) -> dict:
     p0 = _detect_cost_pressure(credits, debits)
     if p0:
         patterns.append(p0)
+    elif business_mode and credits and not debits:
+        p0_inferred = _detect_inferred_cost_pressure(credits)
+        if p0_inferred:
+            patterns.append(p0_inferred)
 
     if business_mode:
         p_business = _detect_business_revenue_concentration(credits)
@@ -645,6 +724,28 @@ def _detect_cost_pressure(credits: list, debits: list) -> Optional[dict]:
     }
 
 
+def _detect_inferred_cost_pressure(credits: list) -> Optional[dict]:
+    """Fallback cost pressure signal for credit-only business exports."""
+    if not credits:
+        return None
+    total_income = sum(float(t.get("amount", 0) or 0) for t in credits)
+    if total_income <= 0:
+        return None
+    inferred_spending = total_income * INFERRED_BUSINESS_COST_RATIO
+    ratio = inferred_spending / total_income
+    pct = round(ratio * 100)
+    margin = round(((total_income - inferred_spending) / total_income) * 100)
+    return {
+        "id": "cost_pressure",
+        "title": "Cost Pressure (Estimated)",
+        "detail": (
+            f"This dataset has inflow-only rows, so operating cost was estimated at {pct}% "
+            f"of inflow, leaving an estimated margin of {margin}%."
+        ),
+        "severity": "low" if ratio < 0.7 else "medium",
+    }
+
+
 def _detect_business_revenue_concentration(credits: list) -> Optional[dict]:
     """Detect concentration risk when one category dominates revenue."""
     if not credits:
@@ -698,16 +799,40 @@ def _is_business_dataset(transactions: list) -> bool:
 
     tagged_rows = 0
     operations_rows = 0
+    credit_rows = 0
+    csv_rows = 0
+    income_like_rows = 0
+    numeric_desc_rows = 0
     for t in transactions:
         desc = (t.get("description") or "").lower()
         cat = (t.get("category") or "").lower()
+        tx_type = (t.get("type") or "").lower()
+        source = (t.get("source") or "").lower()
         if "(revenue)" in desc or "(cost)" in desc:
             tagged_rows += 1
         if cat == "operations":
             operations_rows += 1
+        if tx_type == "credit":
+            credit_rows += 1
+        if source == "csv":
+            csv_rows += 1
+        if cat in {"income", "sales"}:
+            income_like_rows += 1
+        if re.fullmatch(r"\d{5,}", (t.get("description") or "").strip()):
+            numeric_desc_rows += 1
 
     ratio = (tagged_rows + operations_rows) / max(len(transactions), 1)
-    return ratio >= 0.4
+    if ratio >= 0.4:
+        return True
+
+    # Heuristic fallback for invoice exports that appear as inflow-only CSV rows.
+    n = max(len(transactions), 1)
+    mostly_credit = (credit_rows / n) >= 0.9
+    mostly_csv = (csv_rows / n) >= 0.9
+    mostly_income_like = (income_like_rows / n) >= 0.7
+    numeric_invoice_like = (numeric_desc_rows / n) >= 0.35
+    high_volume = len(transactions) >= 500
+    return high_volume and mostly_credit and mostly_csv and (mostly_income_like or numeric_invoice_like)
 
 
 def _detect_weekend_spending(debits: list) -> Optional[dict]:

@@ -1589,7 +1589,6 @@ async function confirmExecutePayment() {
   const amountRaw = String(getEl("executeAmount")?.value || "").trim();
   const paymentCode = String(getEl("executePaymentItemId")?.value || "").trim();
   const amountNGN = Number(amountRaw);
-  const amountKobo = Math.round(amountNGN * 100);
 
   if (!customerId) {
     showToast("Enter customer ID.", "error");
@@ -1599,7 +1598,7 @@ async function confirmExecutePayment() {
     showToast("Enter a valid amount.", "error");
     return;
   }
-  if (amountKobo < 20000) {
+  if (amountNGN < 200) {
     showToast("Minimum amount is ₦200.00", "error");
     return;
   }
@@ -1633,18 +1632,19 @@ async function confirmExecutePayment() {
     await sleep(500);
 
     const clientReference = buildExecuteReference();
+    const payPayload = {
+      customerId: customerId,
+      paymentCode: paymentCode,
+      amount: Math.round(amountNGN),
+      reference: clientReference,
+      customerEmail: "",
+      customerMobile: "",
+    };
 
     const payRes = await fetch(`${API_BASE}/api/bills/pay`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        customerId: customerId,
-        paymentCode: paymentCode,
-        amount: amountKobo,
-        reference: clientReference,
-        customerMobile: "",
-        customerEmail: ""
-      })
+      body: JSON.stringify(payPayload)
     });
 
     const payData = await payRes.json();

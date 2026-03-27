@@ -48,6 +48,8 @@ def calculate_score(transactions: list) -> dict:
     if not transactions:
         return _empty_score()
 
+    business_mode = _is_business_dataset(transactions)
+
     # ── Separate credits and debits
     credits = [t for t in transactions if t.get("type") == "credit"]
     debits  = [t for t in transactions if t.get("type") == "debit"]
@@ -69,14 +71,15 @@ def calculate_score(transactions: list) -> dict:
         income_score,
     )
 
-    # ── PILLAR 3: Savings Behavior (20 pts)
-    savings_score = _score_savings(transactions)
-
-    # ── PILLAR 4: Bill Regularity (15 pts)
-    bill_score = _score_bills(debits)
-
-    # ── PILLAR 5: Category Diversity (15 pts)
-    diversity_score = _score_diversity(debits)
+    # ── PILLAR 3/4/5: Context-aware scoring
+    if business_mode:
+        savings_score = _score_business_reserve(total_income, total_spending)
+        bill_score = _score_business_margin(total_income, total_spending)
+        diversity_score = _score_business_diversity(transactions)
+    else:
+        savings_score = _score_savings(transactions)
+        bill_score = _score_bills(debits)
+        diversity_score = _score_diversity(debits)
 
     # ── TOTAL
     total = (
@@ -282,6 +285,57 @@ def _score_diversity(debits: list) -> float:
     return 0.0
 
 
+def _score_business_reserve(income: float, spending: float) -> float:
+    """20 pts max. For business ledgers, uses retained earnings ratio as reserve signal."""
+    if income <= 0:
+        return 0.0
+    reserve_ratio = max(0.0, (income - spending) / income)
+    if reserve_ratio >= 0.35:
+        return 20.0
+    if reserve_ratio >= 0.25:
+        return 16.0
+    if reserve_ratio >= 0.15:
+        return 12.0
+    if reserve_ratio >= 0.08:
+        return 8.0
+    return 4.0
+
+
+def _score_business_margin(income: float, spending: float) -> float:
+    """15 pts max. Measures cost discipline (profit margin) for business-style data."""
+    if income <= 0:
+        return 0.0
+    margin = (income - spending) / income
+    if margin >= 0.35:
+        return 15.0
+    if margin >= 0.25:
+        return 12.0
+    if margin >= 0.15:
+        return 9.0
+    if margin >= 0.08:
+        return 6.0
+    return 3.0
+
+
+def _score_business_diversity(transactions: list) -> float:
+    """15 pts max. Uses category spread across all flows for business ledgers."""
+    categories = {
+        (t.get("category") or "").strip().lower()
+        for t in transactions
+        if (t.get("category") or "").strip()
+    }
+    count = len(categories)
+    if count >= 6:
+        return 15.0
+    if count >= 4:
+        return 12.0
+    if count >= 3:
+        return 9.0
+    if count >= 2:
+        return 6.0
+    return 3.0
+
+
 def _score_label(score: int) -> tuple:
     """Returns (label, color, message) based on score."""
     if score >= 80:
@@ -347,6 +401,7 @@ def days_to_zero(
     if not transactions:
         return _empty_days()
 
+    business_mode = _is_business_dataset(transactions)
     debits = [t for t in transactions if t.get("type") == "debit"]
     credits = [t for t in transactions if t.get("type") == "credit"]
 
@@ -382,20 +437,38 @@ def days_to_zero(
     if spend_dates:
         calendar_span_days = (max(spend_dates) - min(spend_dates)).days + 1
 
-    observation_days = max(active_spend_days, calendar_span_days, 7)
+    minimum_window = 30 if business_mode else 7
+    observation_days = max(active_spend_days, calendar_span_days, minimum_window)
     base_burn = total_spending / observation_days
 
     # Add a small volatility buffer when spending is highly concentrated.
     max_day_spend = max(daily_spend.values())
     concentration = (max_day_spend / base_burn) - 1 if base_burn else 0
-    volatility_buffer = min(0.12, max(0.0, concentration * 0.031))
+    volatility_cap = 0.06 if business_mode else 0.12
+    volatility_buffer = min(volatility_cap, max(0.0, concentration * 0.031))
     daily_burn = base_burn * (1 + volatility_buffer)
 
-    # ── Estimate balance if not provided
-    if current_balance is None or current_balance <= 0:
+    # ── Estimate balance if not provided (or if ledger-derived value is implausible)
+    if business_mode:
+        margin_ratio = ((total_income - total_spending) / total_income) if total_income > 0 else 0.0
+        target_days = _business_target_runway_days(margin_ratio)
+        min_plausible = daily_burn * 5
+        max_plausible = daily_burn * 120
+
+        if (
+            current_balance is None
+            or current_balance <= 0
+            or current_balance < min_plausible
+            or current_balance > max_plausible
+        ):
+            current_balance = daily_burn * target_days
+    elif current_balance is None or current_balance <= 0:
         net = total_income - total_spending
-        # Assume user started with some base amount
-        current_balance = max(net, daily_burn * 3)
+        # Keep inferred runway bounded so historical exports don't project unrealistically.
+        runway_floor_days = 7
+        runway_cap_days = 180
+        inferred_balance = max(net, daily_burn * runway_floor_days)
+        current_balance = min(inferred_balance, daily_burn * runway_cap_days)
 
     if daily_burn <= 0:
         return _empty_days()
@@ -469,6 +542,7 @@ def detect_patterns(transactions: list) -> dict:
 
     debits = [t for t in transactions if t.get("type") == "debit"]
     credits = [t for t in transactions if t.get("type") == "credit"]
+    business_mode = _is_business_dataset(transactions)
 
     patterns = []
 
@@ -484,30 +558,35 @@ def detect_patterns(transactions: list) -> dict:
             "count": len(patterns)
         }
 
-    # ── Pattern 1: Weekend Overspending
-    p1 = _detect_weekend_spending(debits)
-    if p1:
-        patterns.append(p1)
+    if business_mode:
+        p_business = _detect_business_revenue_concentration(credits)
+        if p_business:
+            patterns.append(p_business)
+    else:
+        # ── Pattern 1: Weekend Overspending
+        p1 = _detect_weekend_spending(debits)
+        if p1:
+            patterns.append(p1)
 
-    # ── Pattern 2: Post-Salary Spike
-    p2 = _detect_post_salary_spike(transactions)
-    if p2:
-        patterns.append(p2)
+        # ── Pattern 2: Post-Salary Spike
+        p2 = _detect_post_salary_spike(transactions)
+        if p2:
+            patterns.append(p2)
 
-    # ── Pattern 3: Food Overspending
-    p3 = _detect_food_addiction(debits)
-    if p3:
-        patterns.append(p3)
+        # ── Pattern 3: Food Overspending
+        p3 = _detect_food_addiction(debits)
+        if p3:
+            patterns.append(p3)
 
-    # ── Pattern 4: Recurring Merchant
-    p4 = _detect_recurring_merchant(debits)
-    if p4:
-        patterns.append(p4)
+        # ── Pattern 4: Recurring Merchant
+        p4 = _detect_recurring_merchant(debits)
+        if p4:
+            patterns.append(p4)
 
-    # ── Pattern 5: Late-Month Desperation
-    p5 = _detect_late_month_spending(debits)
-    if p5:
-        patterns.append(p5)
+        # ── Pattern 5: Late-Month Desperation
+        p5 = _detect_late_month_spending(debits)
+        if p5:
+            patterns.append(p5)
 
     # Sort by severity, then prioritize post-income spikes for action planning.
     severity_order = {"high": 0, "medium": 1, "low": 2}
@@ -563,6 +642,71 @@ def _detect_cost_pressure(credits: list, debits: list) -> Optional[dict]:
         ),
         "severity": severity
     }
+
+
+def _detect_business_revenue_concentration(credits: list) -> Optional[dict]:
+    """Detect concentration risk when one category dominates revenue."""
+    if not credits:
+        return None
+
+    by_category = defaultdict(float)
+    total = 0.0
+    for t in credits:
+        amount = float(t.get("amount", 0) or 0)
+        category = (t.get("category") or "Uncategorized").strip()
+        by_category[category] += amount
+        total += amount
+
+    if total <= 0 or not by_category:
+        return None
+
+    top_category = max(by_category, key=by_category.get)
+    top_share = by_category[top_category] / total
+    if top_share < 0.55:
+        return None
+
+    pct = round(top_share * 100)
+    return {
+        "id": "revenue_concentration",
+        "title": "Revenue Concentration Risk",
+        "detail": (
+            f"{pct}% of inflow is concentrated in {top_category}. "
+            f"Diversifying revenue mix can reduce volatility risk."
+        ),
+        "severity": "medium" if top_share >= 0.7 else "low"
+    }
+
+
+def _business_target_runway_days(margin_ratio: float) -> int:
+    """Maps business margin profile to a practical target runway window."""
+    if margin_ratio >= 0.35:
+        return 30
+    if margin_ratio >= 0.25:
+        return 24
+    if margin_ratio >= 0.15:
+        return 18
+    if margin_ratio >= 0.08:
+        return 12
+    return 7
+
+
+def _is_business_dataset(transactions: list) -> bool:
+    """Heuristic: detect synthetic sales-ledger style rows from CSV conversion."""
+    if not transactions:
+        return False
+
+    tagged_rows = 0
+    operations_rows = 0
+    for t in transactions:
+        desc = (t.get("description") or "").lower()
+        cat = (t.get("category") or "").lower()
+        if "(revenue)" in desc or "(cost)" in desc:
+            tagged_rows += 1
+        if cat == "operations":
+            operations_rows += 1
+
+    ratio = (tagged_rows + operations_rows) / max(len(transactions), 1)
+    return ratio >= 0.4
 
 
 def _detect_weekend_spending(debits: list) -> Optional[dict]:

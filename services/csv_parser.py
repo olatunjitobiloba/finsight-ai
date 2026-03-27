@@ -61,8 +61,8 @@ def parse_csv(csv_content: Union[str, bytes]) -> Dict:
                     transactions.extend(parsed_result)
                 elif parsed_result:
                     transactions.append(parsed_result)
-                else:
-                    failed_rows.append(f"Row {row_num}: Invalid data format")
+                # Silently skip rows with no monetary data (e.g., inventory records without amounts)
+                # rather than failing the entire CSV import
             except Exception as e:
                 failed_rows.append(f"Row {row_num}: {str(e)}")
         

@@ -19,6 +19,7 @@ VERIFY_BASE_URL = os.getenv(
     "INTERSWITCH_VERIFY_BASE_URL",
     "https://api-marketplace-routing.k8.isw.la/marketplace-routing/api/v1",
 )
+MARKETPLACE_BASE_URL = os.getenv("INTERSWITCH_MARKETPLACE_BASE_URL", VERIFY_BASE_URL)
 BASE_URL = os.getenv("INTERSWITCH_BASE_URL", VERIFY_BASE_URL)
 TERMINAL_ID = os.getenv("INTERSWITCH_TERMINAL_ID", "3DMO0001")
 
@@ -586,7 +587,7 @@ def check_transaction(request_reference: str) -> dict:
 
 def get_bank_list() -> dict:
     """Fetch list of banks and corresponding bank codes."""
-    url = f"{QUICKTELLER_URL}/financialinstitutions/banks"
+    url = f"{MARKETPLACE_BASE_URL}/verify/identity/account-number/bank-list"
 
     def _normalize_bank(bank: dict) -> dict:
         if not isinstance(bank, dict):
@@ -610,15 +611,33 @@ def get_bank_list() -> dict:
         return {"code": code, "name": name}
 
     try:
-        # Bank list is served by Quickteller, not the Verify identity API.
+        # Bank list is served by the Marketplace verify identity API.
         logging.warning("[get_bank_list] Calling URL: %s", url)
-        logging.warning("[get_bank_list] QUICKTELLER_URL = %s", QUICKTELLER_URL)
-        response = httpx.get(url, headers=_auth_headers(), timeout=15)
+        logging.warning("[get_bank_list] MARKETPLACE_BASE_URL = %s", MARKETPLACE_BASE_URL)
+        token = get_name_inquiry_token()
+        response = httpx.get(
+            url,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+            timeout=15,
+        )
 
         # Token may be stale; force refresh once on unauthorized.
         if response.status_code == 401:
             logging.warning("[get_bank_list] Received 401, retrying with refreshed token")
-            response = httpx.get(url, headers=_auth_headers(force_refresh=True), timeout=15)
+            token = get_name_inquiry_token(force_refresh=True)
+            response = httpx.get(
+                url,
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                },
+                timeout=15,
+            )
 
         logging.warning("[get_bank_list] Status code: %s", response.status_code)
         logging.warning("[get_bank_list] Raw response preview: %s", response.text[:500])
